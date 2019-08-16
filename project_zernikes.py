@@ -4,36 +4,9 @@ import argparse
 from datetime import datetime
 import numpy as np
 from astropy.io import fits
-from poppy.zernike import R, noll_indices
+from poppy.zernike import zernike_basis, arbitrary_basis
 
-def zernike(n, m, npix=100, aperture=None, rho=None, theta=None, outside=np.nan,
-            noll_normalize=True, **kwargs):
-    """Return the Zernike polynomial Z[m,n] for a given pupil.
-
-    poppy.zernike.zernike sets values for rho > 1 to 0, so this is a slightly
-    modified duplicate of that function that leaves those values alone, as a
-    kludgy way of extrapolating DM commands outside the beam footprint.
-    """
-
-    if aperture is None:
-        aperture = np.ones((npix, npix))
-
-    if m == 0:
-        if n == 0:
-            zernike_result = aperture
-        else:
-            norm_coeff = np.sqrt(n + 1) if noll_normalize else 1
-            zernike_result = norm_coeff * R(n, m, rho) * aperture
-    elif m > 0:
-        norm_coeff = np.sqrt(2) * np.sqrt(n + 1) if noll_normalize else 1
-        zernike_result = norm_coeff * R(n, m, rho) * np.cos(np.abs(m) * theta) * aperture
-    else:
-        norm_coeff = np.sqrt(2) * np.sqrt(n + 1) if noll_normalize else 1
-        zernike_result = norm_coeff * R(n, m, rho) * np.sin(np.abs(m) * theta) * aperture
-
-    return zernike_result
-
-def zernike_basis(nterms, nact, angle, fill_fraction):
+def projected_basis(nterms, angle, fill_fraction, actuator_mask):
     '''
     Return a set of Zernike modes stretched such that
     they form ordinary Zernike shapes when deprojected.
@@ -48,9 +21,6 @@ def zernike_basis(nterms, nact, angle, fill_fraction):
     Parameters:
         nterms : int
             Number of terms in the basis. Always skips piston.
-        nact : int
-            Number of actuators across the pupil. For the 2K,
-            this is 50. For the ALPAOs, this is 11.
         angle : float
             Incidence angle of the beam on the DM, given in
             degrees. Angles are always assumed to be in the x-z
@@ -58,12 +28,16 @@ def zernike_basis(nterms, nact, angle, fill_fraction):
         fill_fraction : float
             Fraction of the DM in the beam footprint (defined
             along the x axis) [=0.96 for the 2K]
+        actuator_mask : str
+            Path to FITS file with actuators mapped from 1 to n actuators.
 
     Returns: list of nterms modes of shape nact x act 
     '''
 
-    # generate (n, m) indices for zernike modes (skip piston)
-    nmlist = [noll_indices(j) for j in range(2,nterms+2)]
+    with fits.open(actuator_mask) as f:
+        dm_mask = f[0].data.astype(bool)
+
+    nact = dm_mask.shape[0]
 
     # generate the radial and theta arrays that account for geometrical
     # projection
@@ -74,9 +48,37 @@ def zernike_basis(nterms, nact, angle, fill_fraction):
     theta = np.arctan2(yy/cos, xx)
 
     # make the modes
-    zbasis = [zernike(n, m, npix=nact, outside=0., rho=rho, theta=theta) for (n, m) in nmlist]
+    #zbasis = zernike_basis(nterms=nterms, npix=nact, outside=0., rho=rho, theta=theta) 
+    zbasis = arbitrary_basis(aperture=rho <= 1.0, nterms=nterms, outside=0., rho=rho, theta=theta) 
 
-    return zbasis
+    # find actuators outside the beam footprint
+    footprint = zbasis[0] != 0
+    outside = dm_mask & ~footprint
+    outyx = np.dstack(np.where(outside))[0]
+
+    # interpolate from nearest neighbors
+    for y, x in outyx:
+        yneighbor, xneighbor = find_nearest((y, x), footprint, num=1)
+        zbasis[:, y, x] = zbasis[:, yneighbor, xneighbor]
+
+    return zernike_basis
+
+def find_nearest(yx, footprint, num=1):
+    '''
+    Return the nearest neighbor(s) of an actuator
+    within the beam footprint
+    '''
+    
+    act_pos = yx
+    indices = np.indices(footprint.shape)
+    
+    distance = np.sqrt( (indices[0]-act_pos[0])**2 + (indices[1]-act_pos[1])**2 )
+    
+    dist_sort = np.argsort(np.ma.masked_where(~footprint, distance), axis=None)
+    closest_idx = dist_sort[:num]
+    closest = (indices[0].flat[closest_idx][0], indices[1].flat[closest_idx][0])
+    
+    return closest
 
 def write_fits(zbasis, outname, nact, angle, fill_fraction, overwrite=False):
     '''Write zernike basis out to FITS file'''
@@ -93,23 +95,22 @@ def write_fits(zbasis, outname, nact, angle, fill_fraction, overwrite=False):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('nterms', type=int, help='Number of Zernike modes to generate')
-parser.add_argument('mact', type=int, help='Number of actuators across the DM')
 parser.add_argument('angle', type=float, help='Incident angle of the beam on the DM (degrees)')
 parser.add_argument('fill_fraction', type=float, help='Fraction of the DM filled in the horizontal direction')
+parser.add_argument('actuator_mask', type=str, help='Path to FITS file with binary DM actuator mask (probably under /opt/MagAOX/calib/dm/[dm_name]/')
 parser.add_argument('outname', type=str, help='File to write out')
 parser.add_argument('--overwrite', type=bool, default=False, help='Overwrite existing FITS file? Default=False')
-
 
 if __name__ == '__main__':
 
     args = parser.parse_args()
 
     nterms = args.nterms
-    nact = args.mact
     angle = args.angle
     fill_fraction = args.fill_fraction 
+    actuator_mask = args.actuator_mask
     outname = args.outname
     overwrite = args.overwrite
 
-    zbasis = zernike_basis(nterms, nact, angle, fill_fraction)
+    zbasis = projected_basis(nterms, angle, fill_fraction, actuator_mask)
     write_fits(zbasis, outname, nact, angle, fill_fraction, overwrite=overwrite)
