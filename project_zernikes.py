@@ -49,7 +49,8 @@ def projected_basis(nterms, angle, fill_fraction, actuator_mask):
 
     # make the modes
     #zbasis = zernike_basis(nterms=nterms, npix=nact, outside=0., rho=rho, theta=theta) 
-    zbasis = arbitrary_basis(aperture=rho <= 1.0, nterms=nterms, outside=0., rho=rho, theta=theta) 
+    # generate nterms+1 because we're throwing away piston later
+    zbasis = arbitrary_basis(aperture=rho <= 1.0, nterms=nterms+1, outside=0., rho=rho, theta=theta) 
 
     # find actuators outside the beam footprint
     footprint = zbasis[0] != 0
@@ -61,7 +62,8 @@ def projected_basis(nterms, angle, fill_fraction, actuator_mask):
         yneighbor, xneighbor = find_nearest((y, x), footprint, num=1)
         zbasis[:, y, x] = zbasis[:, yneighbor, xneighbor]
 
-    return zernike_basis
+    # toss piston
+    return zbasis[1:]
 
 def find_nearest(yx, footprint, num=1):
     '''
