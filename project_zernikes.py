@@ -80,12 +80,12 @@ def find_nearest(yx, footprint, num=1):
     
     return closest
 
-def write_fits(zbasis, outname, nact, angle, fill_fraction, overwrite=False):
+def write_fits(zbasis, outname, angle, fill_fraction, overwrite=False):
     '''Write zernike basis out to FITS file'''
 
     hdu = fits.PrimaryHDU(np.asarray(zbasis, dtype=np.float32))
     hdu.header.update({
-        'nact' : nact,
+        #'nact' : nact,
         'angle' : angle,
         'fraction' : fill_fraction,
         'date' : datetime.today().strftime('%Y-%m-%d')
@@ -113,4 +113,4 @@ if __name__ == '__main__':
     overwrite = args.overwrite
 
     zbasis = projected_basis(nterms, angle, fill_fraction, actuator_mask)
-    write_fits(zbasis, outname, nact, angle, fill_fraction, overwrite=overwrite)
+    write_fits(zbasis, outname, angle, fill_fraction, overwrite=overwrite)
