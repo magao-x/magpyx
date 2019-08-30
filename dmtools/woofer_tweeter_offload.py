@@ -43,7 +43,7 @@ def pseudoinverse_svd(matrix, abs_threshold=None, rel_threshold=None, n_threshol
         threshold = s.max() * rel_threshold
         reject = s <= threshold
     elif n_threshold is not None:
-        reject = np.arange(len(s)) < n_threshold
+        reject = np.arange(len(s)) > n_threshold
         threshold = s[n_threshold]
     else:
         threshold = 1e-16
@@ -56,8 +56,8 @@ def pseudoinverse_svd(matrix, abs_threshold=None, rel_threshold=None, n_threshol
     sinv[np.isnan(sinv)] = 0.
     sinv[np.isinf(sinv)] = 0.
     
-    # compute the pseudo-inverse: Vh s^-1 U_dagger (hermitian conjugate)
-    return np.dot(Vh, np.dot(sinv, U.T.conj())), threshold, U, s, Vh
+    # compute the pseudo-inverse: Vh.T s^-1 U_dagger (hermitian conjugate)
+    return np.dot(Vh.T, np.dot(sinv, U.T.conj())), threshold, U, s, Vh
 
 def plot_singular_values(sing_vals, threshold=None):
     
@@ -76,9 +76,9 @@ def plot_singular_values(sing_vals, threshold=None):
     return fig, ax
 
 def compute_woofer_tweeter_matrix(woofer_respM, tweeter_respM, **kwargs):
-    woofer_inv, _ = pseudoinverse_svd(woofer_respM, **kwargs)
-    return np.dot(woofer_inv, tweeter_respM)
-
+    woofer_inv, threshold, U, s, Vh = pseudoinverse_svd(woofer_respM, **kwargs)
+    #woofer_inv =  pinv2(woofer_respM)#, rcond=5e-3)
+    return np.dot(woofer_inv, tweeter_respM), s, threshold
 
  if __name___ == '__main__':
  	pass
