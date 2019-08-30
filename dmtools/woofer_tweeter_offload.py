@@ -80,5 +80,5 @@ def compute_woofer_tweeter_matrix(woofer_respM, tweeter_respM, **kwargs):
     #woofer_inv =  pinv2(woofer_respM)#, rcond=5e-3)
     return np.dot(woofer_inv, tweeter_respM), s, threshold
 
- if __name___ == '__main__':
- 	pass
+if __name__ == '__main__':
+    pass
