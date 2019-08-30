@@ -1,3 +1,11 @@
+'''
+To do:
+* Clean all this up
+* Make sure everything's still working as intended
+* Develop notebooks with simple use case
+* Write pyramid metric(s)
+
+'''
 
 import time
 
@@ -557,7 +565,7 @@ def airy_metric(measured, model, penalty=0.):
     print(np.sqrt(np.sum((measured-model)**2)), penalty/np.sqrt(np.sum(measured**2)))
     return np.sqrt(np.sum((measured-model)**2)) + penalty/np.sqrt(np.sum(measured**2))
 
-def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict=metric_dict, debug=False):
+def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict={}, debug=False):
     
     steps = np.linspace(curbounds[0], curbounds[1], num=nsteps, endpoint=True)
     
