@@ -1,6 +1,8 @@
-import numpy as np
-from scipy import linalg
+import os
 
+import numpy as np
+from astropy.io import fits
+from scipy import linalg
 
 def pseudoinverse_svd(matrix, abs_threshold=None, rel_threshold=None, n_threshold=None):
     '''
@@ -80,5 +82,41 @@ def compute_woofer_tweeter_matrix(woofer_respM, tweeter_respM, **kwargs):
     #woofer_inv =  pinv2(woofer_respM)#, rcond=5e-3)
     return np.dot(woofer_inv, tweeter_respM), s, threshold
 
+
+def main():
+
+    # parse command line arguments
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('zrespM_woofer', type=str, help='Path to zrespM FITS file for the woofer')
+    parser.add_argument('zrespM_tweeter', type=str, help='Path to zrespM FITS file for the tweeter')
+    parser.add_argument('outname', type=str, help='Name/path of FITS file to write the tweeter-woofer offload matrix to.')
+    parser.add_argument('--abs_threshold', type=float, default=None, help='Absolute threshold for singular values of woofer pseudoinverse. If no thresholds are given, the default is 1e-16.')
+    parser.add_argument('--rel_threshold', type=float, default=None, help='Threshold as a fraction of the largest singular value')
+    parser.add_argument('--n_threshold', type=int, default=None, help='Number of singular values to keep for woofer pseudoinverse.')
+    parser.add_argument('--overwrite', type=bool, default=False, help='Overwrite existing FITS file? Default=False')
+
+    args = parser.parse_args()
+
+    # read in response matrix cubes
+    with fits.open(args.zrespM_woofer) as f:
+        zrespM_woofer = f[0].data
+
+    with fits.open(args.zrespM_tweeter) as f:
+        zrespM_tweeter = f[0].data
+
+    # compute the offload matrix
+    wt_matrix = compute_woofer_tweeter_matrix(zrespM_woofer.reshape(zrespM_woofer.shape[0], -1).T,
+                                              zrespM_tweeter.reshape(zrespM_tweeter.shape[0], -1).T,
+                                              abs_threshold=args.abs_threshold,
+                                              rel_threshold=args.rel_threshold,
+                                              n_threshold=args.n_threshold)[0].T
+
+    # write to file
+    print('Writing {}x{} matrix to {}'.format(wt_matrix.shape[0], wt_matrix.shape[1], os.path.abspath(args.outname)))
+    fits.writeto(args.outname, wt_matrix, overwrite=args.overwrite)
+
+
 if __name__ == '__main__':
-    pass
+    main()
