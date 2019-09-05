@@ -7,30 +7,27 @@ To do:
 
 '''
 
-import time
+
+from copy import deepcopy
+from time import sleep
+from random import shuffle
 
 import numpy as np
-from copy import deepcopy
 
-from time import sleep
-
+import purepyindi as indi
 import ImageStreamIOWrap as shmio
+
+from astropy.stats import sigma_clipped_stats
+from astropy.io import fits
 
 from scipy.optimize import leastsq, minimize_scalar
 from scipy.ndimage import center_of_mass
 
-from scipy.optimize import minimize_scalar
-from scipy.special import jv
-from scipy.optimize import dual_annealing
 from scipy import stats
-from astropy.stats import sigma_clipped_stats
+from scipy.optimize import minimize_scalar, dual_annealing
+from scipy.special import jv
 
 from skimage import draw
-from astropy.io import fits
-
-import purepyindi as indi
-
-from random import shuffle
 
 
 #-----purepyindi interaction-----
@@ -40,16 +37,35 @@ def get_value(client, device, prop, elem):
     Helper function to return an INDI element
     
     Parameters:
-    They're all strings
+        client : purepyindi.Client object
+        device : str
+            Device name
+        prop : str
+            Property name
+        elem : str
+            Element name
     
-    Returns: element
-    
+    Returns: element value
     '''
     return client['{}.{}.{}'.format(device, prop, elem)]
 
 def send_value(client, device, prop, elem, value):
     '''
     Helper function for setting an INDI element
+
+
+    Parameters:
+        client : purepyindi.Client object
+        device : str
+            Device name
+        prop : str
+            Property name
+        elem : str
+            Element name
+        value : any
+            Value to set
+
+    Returns: nothing
     
     '''
     client['{}.{}.{}'.format(device, prop, elem)] = value
@@ -57,9 +73,19 @@ def send_value(client, device, prop, elem, value):
 def get_zmode_vector(client, device, modes):
     '''
     Get a vector of current zernike modes
-    
-    client, device: str
-    modes: list of zernike modes [range(3,7), for example]
+
+    Parameters:
+        client : purepyindi.Client object
+        device : str
+            Device name
+        prop : str
+            Property name
+        modes : list like
+            List of zernike modes to query. Ex: range(3,7) or [1,3,6]
+
+    Returns:
+        amplitudes : list
+            List of mode amplitudes
     '''
     amps = []
     for n in modes:
@@ -71,18 +97,33 @@ def get_zmode_vector(client, device, modes):
 def send_zmode_amplitude(client, device, mode, amp):
     '''
     Set a single mode amplitude
-    
-    mode: '00', '01', etc.
+
+    Parameters:
+        client : purepyindi.Client object
+        device : str
+            Device name
+        mode : str
+            Zernike mode: '00', '01', '02', etc
+        amp : float
+            Mode coefficient in microns RMS.
+            
     '''
     client['{}.{}.{}'.format(device, 'target_amps', mode)] = amp
     
 def send_zmode_vector(client, device, modes, amps):
     '''
-    modes: list of modes to send updated values to
-    amps: corresponding coeffients
+    Set many mode amplitudes
+
+    Parameters:
+        client : purepyindi.Client object
+        device : str
+            Device name
+        modes : list like
+            List of zernike modes. Ex: [1,2,3] or range(3,8)
+        amps : list like
+            List of mode coefficients
     
     modes and amps must be the same length.
-    
     '''
     if len(modes) != len(amps):
         raise ValueError('modes and amps are different lengths!')
@@ -94,6 +135,14 @@ def send_zmode_vector(client, device, modes, amps):
         send_zmode_amplitude(client, device, mode, a)
         
 def zero_dm(client, device):
+    '''
+    Set all mode amplitudes to 0.
+
+    Parameters:
+        client : purepyindi.Client object
+        device : str
+            Device name
+    '''
     nmodes = len(client.devices[device].properties['current_amps'].elements)
     zeros = np.zeros(nmodes)
     send_zmode_vector(client, device, range(nmodes), zeros)
@@ -109,6 +158,16 @@ def grab_images(shmim, nframes):
     
     This function tries to be smart about
     handling the buffer.
+
+    Parameters:
+        shmim: ImageStreamIOWrap.Image object
+            Open image stream
+        nframes: int
+            Number of sequential frames to capture
+
+    Returns:
+        images : array like
+            Z x Y x X Array of images
     '''
     
     # find buffer length
@@ -148,7 +207,13 @@ def grab_images(shmim, nframes):
     
 def grab_image(shmim):
     '''
-    Grab a single image from the shmim buffer
+    Grab a single image from the shmim buffer.
+
+    Parameters:
+        shmim: ImageStreamIOWrap.Image object
+            Open image stream
+
+    Returns: Y x X image
     '''
     idx = shmim.md.cnt1 #most recent frame
     return np.array(shmim).T.astype(float)[idx]
@@ -158,19 +223,12 @@ def shmim_to_fits(shmim, outname, overwrite=False):
     Intended to write a new flat out to
     file after optimization but can be
     used for anything, really.
+
+    Need to check whether this is transposing images correctly.
     '''
-    image = np.array(shmim)
+    image = grab_image(shmim)
     fits.writeto(outname, image, overwrite=overwrite)
-    
-    
-def shmim_to_fits_transpose(shmim, outname, overwrite=False):
-    '''
-    Intended to write a new flat out to
-    file after optimization but can be
-    used for anything, really.
-    '''
-    image = np.array(shmim)
-    fits.writeto(outname, image.T, overwrite=overwrite)
+
 
 def transfer_shmim(shmim1, shmim2):
     '''
@@ -187,6 +245,7 @@ def transfer_shmim(shmim1, shmim2):
 
 
 def gaussfit(image, clipping=None):
+    '''Fit a Gaussian'''
     cenyx = np.where(image == image.max())
     peak = image[cenyx][0]
     
@@ -203,10 +262,14 @@ def gaussfit(image, clipping=None):
     return leastsq(gausserr, init, args=(shape, im))
     
 def gausserr(params, shape, image):
+    '''Gauss error function'''
     fwhm, peak, ceny, cenx = params
     return gauss2d(fwhm, peak, (ceny, cenx), shape).flatten() - image.flatten()
 
 def gauss_centroid(image, fwhm, clipping=None):
+    '''
+    Least squares fit a gaussian centroid. Less general than gaussfit
+    '''
     cenyx = np.where(image == image.max())
     
     if clipping is not None:
@@ -221,10 +284,15 @@ def gauss_centroid(image, fwhm, clipping=None):
     return leastsq(gauss_centroid_err, init, args=(shape, im, fwhm), ftol=1e-5, xtol=1e-5)
     
 def gauss_centroid_err(params, shape, image, fwhm):
+    '''
+    Gauss centroid error functions
+    '''
+
     ceny, cenx = params
-    fitgauss = gauss2d(fwhm, (ceny, cenx), shape).flatten()
+    #print(ceny, cenx)
+    fitgauss = gauss2d(fwhm, (ceny, cenx), shape)
     
-    return (fitgauss - image.flatten()) * fitgauss # weight
+    return ((fitgauss - image)).flatten() # weight
 
 def least_squares(image, model, weight=None):
     if weight is None:
@@ -234,8 +302,17 @@ def least_squares(image, model, weight=None):
 
 def gauss2d(fwhm, center, size):
     """
-    Gaussian of width fwhm at center in an array
-    of size (yshape, xshape)
+    Generate a 2D Gaussian
+
+    Parameters:
+        fwhm : float
+            FWHM of Gaussian. Same value is used for both dimensions
+        center : tuple of floats
+            Center of Gaussian (can be subpixel): (y, x)
+        size : tuple of ints
+            Shape of array to generate Gaussian
+
+    Returns: 2D array with the Gaussian
     """
     y = np.arange(0, size[0])[:,None]
     x = np.arange(0, size[1])
@@ -247,6 +324,9 @@ def gauss2d(fwhm, center, size):
     return 1./ ( 2 * np.pi * sigma**2) * np.exp( - ((x-x0)**2 + (y-y0)**2) / (2 * sigma**2)) #peak * np.exp(-4*np.log(2) * ((x-x0)**2 + (y-y0)**2) / fwhm**2)
 
 def subtract_bg(image, stype=0):
+    '''
+    Subtract the background from an image in various ways
+    '''
     if stype == 0:
         # full image median
         return image - np.median(image)
@@ -272,6 +352,9 @@ def subtract_bg(image, stype=0):
         return imsub - np.median(imsub)
 
 def subtract_bg_median_sigmaclip(image, sigma):
+    '''
+    Subtract a sigma-clipped median background
+    '''
     im = deepcopy(image)
     _, median1, _ = sigma_clipped_stats(im, sigma=sigma, axis=0, cenfunc='median')
     im -= median1[None,:]
@@ -280,6 +363,10 @@ def subtract_bg_median_sigmaclip(image, sigma):
     return im
 
 def find_peak(image, stype=0, clipping=None):
+    '''
+    Extract the peak from an image by either a
+    naive maximum or a Gaussian fit
+    '''
     if stype == 0:
         # extract peak pixel
         return image.max()
@@ -289,6 +376,9 @@ def find_peak(image, stype=0, clipping=None):
         return params[0][1]
 
 def obscured_airy_disk(I0, wavelength, fnum, pixscale, cenyx, shape):
+    '''
+    Generate an obscured airy pattern for a 29% obscured pupil
+    '''
     eta = 0.29
     
     indices = np.indices(shape)
@@ -305,32 +395,13 @@ def obscured_airy_disk(I0, wavelength, fnum, pixscale, cenyx, shape):
     
     return airy
 
-def gauss_centroid(image, fwhm, clipping=None):
-    cenyx = np.where(image == image.max())
-    
-    if clipping is not None:
-        y = int(np.rint(cenyx[0][0]))
-        x = int(np.rint(cenyx[1][0]))
-        im = image[y-clipping//2:y+clipping//2, x-clipping//2:x+clipping//2]
-    else:
-        im = deepcopy(image)
-        
-    shape = im.shape
-    init = [cenyx[0][0], cenyx[1][0]]
-    return leastsq(gauss_centroid_err, init, args=(shape, im, fwhm), ftol=1e-5, xtol=1e-5)
-    
-def gauss_centroid_err(params, shape, image, fwhm):
-    ceny, cenx = params
-    #print(ceny, cenx)
-    fitgauss = gauss2d(fwhm, (ceny, cenx), shape)
-    
-    return ((fitgauss - image)).flatten() # weight
-
 def obj_func(amp, client, device, shmim, nmode, nimages, metric, metric_dict):
     '''
-    Parameter: amp
-    
-    Minimize: -peak height
+    Function to minimize when eye doctoring.
+
+    TO DO: DOCUMENT ME.
+
+    This is the function that basically does all the work.
     '''
     
     mode = '{:02}'.format(nmode)
@@ -345,7 +416,7 @@ def obj_func(amp, client, device, shmim, nmode, nimages, metric, metric_dict):
         if np.isclose(value, amp): updated=True
         sleep(0.02)
 
-    #sleep(1.0)
+    sleep(0.05)
     
     if metric == 'airy':
         arrlist = grab_images(shmim, nimages)
@@ -373,10 +444,13 @@ def obj_func(amp, client, device, shmim, nmode, nimages, metric, metric_dict):
         radius2 = metric_dict['radius2']
         ratio = get_image_core_ring_ratio(shmim, nimages, radius1, radius2)
         return ratio
+    elif metric == 'pyramid':
+        pupil_mask = metric_dict['pupil_mask']
+        return get_pupil_variance(shmim, nimages, pupil_mask)
     elif metric == 'debug':
         return np.mean(grab_images(shmim, nimages),axis=0)
     else:
-        raise ValueError('metric= {} but metric must be "peak", "airy", "core", or "ratio"!'.format(metric))
+        raise ValueError('metric= {} but metric must be "peak", "airy", "core", "ratio", or "pyramid"!'.format(metric))
         
 def optimize_strehl(client, device, shmim, nmode, nimages, bounds, metric, metric_dict={}, tol=1e-5):
     res = minimize_scalar(obj_func, bounds=bounds,
@@ -388,6 +462,7 @@ def optimize_modes(client, device, shmim, nimages, modes, bounds, metric, metric
                    baseline=True, coreradius=10, kind='grid', search_dict={}):
 
     optimized_amps = []
+    cores = [] # metric
 
     for i, n in enumerate(modes):
 
@@ -402,11 +477,11 @@ def optimize_modes(client, device, shmim, nimages, modes, bounds, metric, metric
         
         initamp = baseval
         send_zmode_amplitude(client, device, mode, initamp)
-        sleep(1.0)
+        sleep(.25)
         #initpeak = get_image_peak(shmim, nimages)
         #print('Initial Peak Height: {}'.format(initpeak))
-        initcore = get_image_coresum(shmim, nimages, coreradius) #10
-        print('Mode {}: Initial Core: {}'.format(mode, initcore))
+        initcore = obj_func(initamp, client, device, shmim, n, nimages, metric, metric_dict) #get_image_coresum(shmim, nimages, coreradius) #10
+        print('Mode {}: Initial Metric: {}'.format(mode, initcore))
         
         if kind == 'minimize':
             tol = search_dict.get(1e-5)
@@ -424,14 +499,15 @@ def optimize_modes(client, device, shmim, nimages, modes, bounds, metric, metric
         # set DM mode to this amplitude and check whether it really
         # improve the solutionbefore moving to next mode
         send_zmode_amplitude(client, device, mode, best_amp)
-        sleep(1.0)
+        sleep(0.25)
 
         # take an image to get the peak height
         #avgpeak = get_image_peak(shmim, nimages)
         #print('Final Peak Height: {}.'.format(avgpeak))
-        finalcore = get_image_coresum(shmim, nimages, coreradius) #10
-        print('Mode {}: Final Core: {}'.format(mode, finalcore))
+        finalcore = obj_func(best_amp, client, device, shmim, n, nimages, metric, metric_dict) #get_image_coresum(shmim, nimages, coreradius) #10
+        print('Mode {}: Final Metric: {}'.format(mode, finalcore))
         optimized_amps.append(best_amp)
+        cores.append(finalcore)
         
         # reject solutions that don't seem to help
         #if finalcore > initcore:
@@ -442,7 +518,7 @@ def optimize_modes(client, device, shmim, nimages, modes, bounds, metric, metric
         #    send_zmode_amplitude(client, device, mode, initamp)
         #    optimized_amps.append(initamp)
 
-    return optimized_amps
+    return optimized_amps, cores
 
 def get_image_peak(shmim, nimages):
     arrlist = grab_images(shmim, nimages)
@@ -565,13 +641,17 @@ def airy_metric(measured, model, penalty=0.):
     print(np.sqrt(np.sum((measured-model)**2)), penalty/np.sqrt(np.sum(measured**2)))
     return np.sqrt(np.sum((measured-model)**2)) + penalty/np.sqrt(np.sum(measured**2))
 
+def get_pupil_variance(shmim, nimages, pupil_mask):
+    images = grab_images(shmim, nimages)
+    return np.var(np.mean(images, axis=0)[pupil_mask])
+
 def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict={}, debug=False):
     
     steps = np.linspace(curbounds[0], curbounds[1], num=nsteps, endpoint=True)
     
     if not debug:
         curves = np.zeros((nrepeats, nsteps))
-        for i in range(nrepeats):
+        for i in range( nrepeats):
             for j, s in enumerate(steps):
                 curves[i, j] = obj_func(s, client, device, shmim, n, nimages, metric, metric_dict)
             
@@ -629,9 +709,12 @@ def focus_sequence(client, device, params, zero_dm=False):
     
     if zero_dm:
         zero_dm(client, device, range(36)) # maybe don't hardcode the number of modes
-        
+       
+    metric = []
     for p in params:
-        optimize_modes(*p)
+        optimized_amps, metrics = optimize_modes(*p)
+        metric.extend(metrics)
+    return metric
 
 def build_sequence(client, device, shmim, nimages, coreradius, metric, metric_dict={}, modes=range(2,36),
                   ncluster=5, nrepeat=3, nseqrepeat=2, kind='grid', search_dict={}, randomize=True, baseline=True, bounds=[-5e-3, 5e-3]):
@@ -675,10 +758,57 @@ def build_sequence(client, device, shmim, nimages, coreradius, metric, metric_di
             
     return args
 
+def parse_modes(modestr):
+    '''
+    Turn '1...5' into [1,2,3,4,5]
+    and '1,3,5' into [1,3,5]
+    '''
+    
+    if '...' in modestr:
+        vals = modestr.split('...')
+        return range(int(vals[0]), int(vals[1])+1)
+    elif ',' in modestr:
+        vals = modestr.split(',')
+        return [int(v) for v in vals]
+
 def main():
+    '''
+    Steps to getting to optimization:
+    * Connect to client
+    * Connect to shmim
+        * If metric is 'pyramid', need to get pupil masks shmim too
+    * Set up sequence(s)
+        * allow something like modes='all',modes='low',modes='high', modes=2,3,4,7,10
+        * need to fix defocus bug (try modes=1,2,3 -- it drops one of them)
+    * Run optimization
+
+    Required arguments (ugh):
+    * INDI port
+    * camera shmim
+    * pupil mask shmim
+    * metric name
+    * metric parameters
+    * modes to optimize
+    * sequence parameters
+
+    '''
+
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('portINDI', type=str, default=7624, help='INDI Port')
+    parser.add_argument('device', type=str, help='INDI device with dm modes.')
+    parser.add_argument('shmim', type=str, help='Shared memory image')
+    parser.add_argument('metric', type=str, help='Optimization metric: "peak", "core", "ratio", or "pyramid"')
+    parser.add_argument('modes', type=str, help='Range of modes [x...y] or comma-separated list of modes [x,y,z]')
+
+
+
+
     # parse args
     # allow something like modes='all',modes='low',modes='high', modes=2,3,4,7,10
     pass
 
 
-
+if __name__ == '__main__':
+    main()
