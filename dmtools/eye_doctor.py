@@ -803,8 +803,6 @@ def main():
     parser.add_argument('modes', type=str, help='Range of modes [x...y] or comma-separated list of modes [x,y,z]')
 
 
-
-
     # parse args
     # allow something like modes='all',modes='low',modes='high', modes=2,3,4,7,10
     pass

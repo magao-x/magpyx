@@ -94,16 +94,15 @@ def write_fits(zbasis, outname, angle, fill_fraction, overwrite=False):
         })
     hdu.writeto(outname, overwrite=overwrite)
 
+def main():
 
-parser = argparse.ArgumentParser()
-parser.add_argument('nterms', type=int, help='Number of Zernike modes to generate')
-parser.add_argument('angle', type=float, help='Incident angle of the beam on the DM (degrees)')
-parser.add_argument('fill_fraction', type=float, help='Fraction of the DM filled in the horizontal direction')
-parser.add_argument('actuator_mask', type=str, help='Path to FITS file with binary DM actuator mask (probably under /opt/MagAOX/calib/dm/[dm_name]/')
-parser.add_argument('outname', type=str, help='File to write out')
-parser.add_argument('--overwrite', type=bool, default=False, help='Overwrite existing FITS file? Default=False')
-
-if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('nterms', type=int, help='Number of Zernike modes to generate')
+    parser.add_argument('angle', type=float, help='Incident angle of the beam on the DM (degrees)')
+    parser.add_argument('fill_fraction', type=float, help='Fraction of the DM filled in the horizontal direction')
+    parser.add_argument('actuator_mask', type=str, help='Path to FITS file with binary DM actuator mask (probably under /opt/MagAOX/calib/dm/[dm_name]/')
+    parser.add_argument('outname', type=str, help='File to write out')
+    parser.add_argument('--overwrite', type=bool, default=False, help='Overwrite existing FITS file? Default=False')
 
     args = parser.parse_args()
 
@@ -116,3 +115,7 @@ if __name__ == '__main__':
 
     zbasis = projected_basis(nterms, angle, fill_fraction, actuator_mask)
     write_fits(zbasis, outname, angle, fill_fraction, overwrite=overwrite)
+
+
+if __name__ == '__main__':
+    main()

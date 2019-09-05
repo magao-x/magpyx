@@ -37,6 +37,13 @@ setup(
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
     packages=find_packages(),
+
+    # add shell scripts here
+    entry_points = {
+        'console_scripts': ['dm_project_zernikes=dmtools.project_zernikes:main',
+                            'dm_offload_matrix=dmtools.woofer_tweeter_offload:main',
+                            'dm_eye_doctor=dmtools.eye_doctor:main'],
+    },
     
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's
