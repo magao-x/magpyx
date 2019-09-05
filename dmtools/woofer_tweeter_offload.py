@@ -77,11 +77,20 @@ def plot_singular_values(sing_vals, threshold=None):
     
     return fig, ax
 
-def compute_woofer_tweeter_matrix(woofer_respM, tweeter_respM, **kwargs):
+def compute_tweeter_woofer_matrix(woofer_respM, tweeter_respM, **kwargs):
+    '''
+    Tweeter -> woofer offload
+    '''
     woofer_inv, threshold, U, s, Vh = pseudoinverse_svd(woofer_respM, **kwargs)
     #woofer_inv =  pinv2(woofer_respM)#, rcond=5e-3)
     return np.dot(woofer_inv, tweeter_respM), s, threshold
 
+def compute_woofer_tweeter_matrix(woofer_respM, tweeter_respM, **kwargs):
+    '''
+    Woofer -> tweeter offload
+    '''
+    tweeter_inv, threshold, U, s, Vh = pseudoinverse_svd(tweeter_respM, **kwargs)
+    return np.dot(tweeter_inv, woofer_respM), s, threshold
 
 def main():
 
@@ -96,6 +105,7 @@ def main():
     parser.add_argument('--rel_threshold', type=float, default=None, help='Threshold as a fraction of the largest singular value')
     parser.add_argument('--n_threshold', type=int, default=None, help='Number of singular values to keep for woofer pseudoinverse.')
     parser.add_argument('--overwrite', type=bool, default=False, help='Overwrite existing FITS file? Default=False')
+    parser.add_argument('--inverse', type=bool, default=False, help='Compute the woofer -> tweeter offload matrix instead.')
 
     args = parser.parse_args()
 
@@ -107,11 +117,18 @@ def main():
         zrespM_tweeter = f[0].data
 
     # compute the offload matrix
-    wt_matrix = compute_woofer_tweeter_matrix(zrespM_woofer.reshape(zrespM_woofer.shape[0], -1).T,
-                                              zrespM_tweeter.reshape(zrespM_tweeter.shape[0], -1).T,
-                                              abs_threshold=args.abs_threshold,
-                                              rel_threshold=args.rel_threshold,
-                                              n_threshold=args.n_threshold)[0].T
+    if not args.inverse:
+        wt_matrix = compute_tweeter_woofer_matrix(zrespM_woofer.reshape(zrespM_woofer.shape[0], -1).T,
+                                                  zrespM_tweeter.reshape(zrespM_tweeter.shape[0], -1).T,
+                                                  abs_threshold=args.abs_threshold,
+                                                  rel_threshold=args.rel_threshold,
+                                                  n_threshold=args.n_threshold)[0].T
+    else: # compute the inverse
+        wt_matrix = compute_woofer_tweeter_matrix(zrespM_woofer.reshape(zrespM_woofer.shape[0], -1).T,
+                                                  zrespM_tweeter.reshape(zrespM_tweeter.shape[0], -1).T,
+                                                  abs_threshold=args.abs_threshold,
+                                                  rel_threshold=args.rel_threshold,
+                                                  n_threshold=args.n_threshold)[0].T
 
     # write to file
     print('Writing {}x{} matrix to {}'.format(wt_matrix.shape[0], wt_matrix.shape[1], os.path.abspath(args.outname)))
