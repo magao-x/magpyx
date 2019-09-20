@@ -3,6 +3,8 @@ from purepyindi.constants import parse_string_into_enum
 
 from configparser import ConfigParser
 import curses
+from contextlib import contextmanager,redirect_stderr,redirect_stdout
+from os import devnull
 
 from .utils import indi_send_and_wait
 from time import sleep
@@ -62,6 +64,14 @@ def parse_value(value):
     except ValueError:
         pass
     return value
+
+
+@contextmanager
+def suppress_stdout_stderr():
+    """A context manager that redirects stdout and stderr to devnull"""
+    with open(devnull, 'w') as fnull:
+        with redirect_stderr(fnull) as err, redirect_stdout(fnull) as out:
+            yield (err, out)
 
 
 def console_status(status_dict, presetname='', auto_exit=True):
@@ -214,8 +224,15 @@ def indi_send_status(client, cmd_dict, presetname, tol=1e-3, status_dict=None, w
             else:
                 status = 'MOVING'
 
-            if 'test' in test_dict[key] and not test_dict[key]['test'](target, requested):
-                status = 'TARGET CHANGED'
+            if 'test' in test_dict[key]:
+                # test if number property target changed
+                if not test_dict[key]['test'](target, requested):
+                    status = 'TARGET CHANGED'
+            else:
+                # test if switch target changed
+                if prop.state == indi.PropertyState.IDLE and target != requested:
+                    status = 'TARGET CHANGED'
+
 
             status_dict[key].update({
                 'status' : status,
@@ -262,7 +279,8 @@ def indi_send_status(client, cmd_dict, presetname, tol=1e-3, status_dict=None, w
         client[key] = value
         
     if curses:
-        console_status(status_dict, presetname, auto_exit=curses_auto_exit)
+        with suppress_stdout_stderr():
+            console_status(status_dict, presetname, auto_exit=curses_auto_exit)
     else:
         while not all([v['status'] == 'READY' for v in status_dict.values()]):
             sleep(0.1)
