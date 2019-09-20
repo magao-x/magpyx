@@ -5,7 +5,7 @@ from codecs import open
 from os import path
 
 here = path.abspath(path.dirname(__file__))
-NAME = 'dmtools'
+NAME = 'magpyx'
 
 # Get the long description from the README file
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
@@ -28,7 +28,7 @@ setup(
     long_description_content_type='text/markdown',
 
     # The project's main homepage.
-    url='https://github.com/magao-x/dmtools',
+    url='https://github.com/magao-x/magpyx',
 
     # Author details
     author='Kyle Van Gorkom',
@@ -40,9 +40,11 @@ setup(
 
     # add shell scripts here
     entry_points = {
-        'console_scripts': ['dm_project_zernikes=dmtools.project_zernikes:main',
-                            'dm_offload_matrix=dmtools.woofer_tweeter_offload:main',
-                            'dm_eye_doctor=dmtools.eye_doctor:main'],
+        'console_scripts': ['dm_project_zernikes=magpyx.project_zernikes:main',
+                            'dm_offload_matrix=magpyx.woofer_tweeter_offload:main',
+                            'dm_eye_doctor=magpyx.eye_doctor:main',
+                            'pyindi_send_preset=magpyx.instrument:main',
+                            'pyindi_send_triplet=magpyx.instrument:send_indi_triplet']
     },
     
     # List run-time dependencies here.  These will be installed by pip when
