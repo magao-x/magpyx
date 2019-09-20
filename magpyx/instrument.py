@@ -324,7 +324,6 @@ def main():
         return
 
     presets = parse_presets('/opt/MagAOX/config/inspresets.conf')
-    print('What the heck.')
 
     if args.preset is not None:
         client = indi.INDIClient(args.host, args.port)
