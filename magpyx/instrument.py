@@ -5,8 +5,8 @@ from configparser import ConfigParser
 import curses
 
 from .utils import indi_send_and_wait
-
 from time import sleep
+import os
 
 class CaseConfigParser(ConfigParser):
     '''Handle case and INDI enums'''
@@ -25,6 +25,8 @@ class CaseConfigParser(ConfigParser):
             return None
 
 def parse_presets(configfile):
+    if not os.path.isfile(configfile):
+        raise FileNotFoundError(f'Could not find the preset file at {configfile}!')
     config = CaseConfigParser()
     config.read(configfile)
     return config.to_dict()
@@ -184,7 +186,6 @@ def indi_send_status(client, cmd_dict, presetname, tol=1e-3, status_dict=None, w
                                    wait_for_properties=wait_for_properties,
                                    return_dict_and_exit=True,
                                    timeout=timeout)
-    print(test_dict)
     def watcher_closure(prop):
         
         for elem in prop.elements.values():
@@ -322,7 +323,8 @@ def main():
         parser.print_help()
         return
 
-    presets = parse_presets('/Users/kvangorkom/Science/github/dmtools/notebooks/inspresets.conf')
+    presets = parse_presets('/opt/MagAOX/config/inspresets.conf')
+    print('What the heck.')
 
     if args.preset is not None:
         client = indi.INDIClient(args.host, args.port)
