@@ -85,7 +85,7 @@ class ImageStream(shmio.Image):
         if self.memsize == 0:
             raise RuntimeError(f'Could not open shared memory image "{name}"!')
         self.buffer = np.array(self, copy=False).T
-        self.naxis = im.md.naxis
+        self.naxis = self.md.naxis
 
     def __getitem__(self, start, stop, step):
         return np.array(self.buffer[start:stop:step], copy=True)
@@ -94,11 +94,11 @@ class ImageStream(shmio.Image):
         return np.array(self.buffer, copy=True)
 
     def grab_latest(self):
-        if naxis  < 3:
+        if self.naxis  < 3:
             return np.array(self.buffer, copy=True)
         else:
-            cnt1 = im.md.cnt1
-            return np.array(self.buffer[:, :, cnt1], copy=True)
+            cnt1 = self.md.cnt1
+            return np.array(self.buffer[cnt1], copy=True)
 
     def grab_many(self, n):
         i = 0
