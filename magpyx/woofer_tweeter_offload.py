@@ -1,6 +1,6 @@
 import os
-
 import numpy as np
+
 def pseudoinverse_svd(matrix, abs_threshold=None, rel_threshold=None, n_threshold=None):
     '''
     Compute the pseudo-inverse of a matrix via an SVD and some threshold.

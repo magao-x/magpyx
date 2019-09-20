@@ -1,9 +1,6 @@
 import purepyindi as indi
-
-try:
-    import ImageStreamIOWrap as shmio
-except ImportError:
-    print('Could not import ImageStreamIOWrap!')
+import numpy as np
+import ImageStreamIOWrap as shmio
 
 def indi_send_and_wait(client, cmd_dict, tol=1e-3, wait_for_properties=False, timeout=None, return_dict_and_exit=False):
     '''

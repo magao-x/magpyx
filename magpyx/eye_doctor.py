@@ -14,10 +14,7 @@ from random import shuffle
 import numpy as np
 
 import purepyindi as indi
-try:
-    import ImageStreamIOWrap as shmio
-except ImportError:
-    print('Could not import ImageStreamIOWrap!')
+import ImageStreamIOWrap as shmio
 
 from astropy.stats import sigma_clipped_stats
 from astropy.io import fits
