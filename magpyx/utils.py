@@ -82,6 +82,8 @@ class ImageStream(shmio.Image):
     def __init__(self, name):
         super().__init__()
         self.open(name)
+        if self.memsize == 0:
+            raise RuntimeError(f'Could not open shared memory image "{name}"!')
         self.buffer = np.array(self, copy=False).T
         self.naxis = im.md.naxis
 
