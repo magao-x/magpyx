@@ -108,6 +108,7 @@ class ImageStream(shmio.Image):
             self.semwait(0) # wait on new image
             cube.append(self.grab_latest())
             i += 1
+        return cube
 
 
 if __name__ == '__main__':
