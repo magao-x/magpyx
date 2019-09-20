@@ -1,6 +1,7 @@
 import purepyindi as indi
 import numpy as np
 import ImageStreamIOWrap as shmio
+from time import sleep
 
 def indi_send_and_wait(client, cmd_dict, tol=1e-3, wait_for_properties=False, timeout=None, return_dict_and_exit=False):
     '''
@@ -86,6 +87,7 @@ class ImageStream(shmio.Image):
             raise RuntimeError(f'Could not open shared memory image "{name}"!')
         self.buffer = np.array(self, copy=False).T
         self.naxis = self.md.naxis
+        self.semindex = None
 
     def __getitem__(self, start, stop, step):
         return np.array(self.buffer[start:stop:step], copy=True)
@@ -98,13 +100,20 @@ class ImageStream(shmio.Image):
             return np.array(self.buffer, copy=True)
         else:
             cnt1 = self.md.cnt1
+            #print(f'Got a semaphore! Buffer index: {self.md.cnt0}')
             return np.array(self.buffer[cnt1], copy=True)
 
     def grab_many(self, n):
+
+        if self.semindex is None:
+            self.semindex = self.getsemwaitindex(0)
         i = 0
         cube = []
+        cnt0 = self.md.cnt0
         while i < n:
-            self.semwait(0) # wait on new image
+            self.semwait(self.semindex)
+            if self.md.cnt0 == cnt0: 
+                continue # stop gap until ImageStreamIOWrap has semaphore flushing
             cube.append(self.grab_latest())
             i += 1
         return cube
