@@ -1,5 +1,10 @@
 import purepyindi as indi
 
+try:
+    import ImageStreamIOWrap as shmio
+except ImportError:
+    print('Could not import ImageStreamIOWrap!')
+
 def indi_send_and_wait(client, cmd_dict, tol=1e-3, wait_for_properties=False, timeout=None, return_dict_and_exit=False):
     '''
     Given a dictionary of the form
@@ -70,9 +75,39 @@ def indi_send_and_wait(client, cmd_dict, tol=1e-3, wait_for_properties=False, ti
         
     return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
 
+class ImageStream(shmio.Image):
+    '''
+    Convenience class to make interacting with image stream circular
+    buffers without copying the entire buffer every time a little
+    easier.
+    '''
 
-def remove_watchers(status_dict):
-    pass
+    def __init__(self, name):
+        super().__init__()
+        self.open(name)
+        self.buffer = np.array(self, copy=False).T
+        self.naxis = im.md.naxis
+
+    def __getitem__(self, start, stop, step):
+        return np.array(self.buffer[start:stop:step], copy=True)
+
+    def grab_buffer(self):
+        return np.array(self.buffer, copy=True)
+
+    def grab_latest(self):
+        if naxis  < 3:
+            return np.array(self.buffer, copy=True)
+        else:
+            cnt1 = im.md.cnt1
+            return np.array(self.buffer[:, :, cnt1], copy=True)
+
+    def grab_many(self, n):
+        i = 0
+        cube = []
+        while i < n:
+            self.semwait(0) # wait on new image
+            cube.append(self.grab_latest())
+            i += 1
 
 
 if __name__ == '__main__':
