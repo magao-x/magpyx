@@ -104,20 +104,19 @@ class ImageStream(shmio.Image):
             return np.array(self.buffer[cnt1], copy=True)
 
     def grab_many(self, n):
-
+    	# find a free semaphore to wait on
         if self.semindex is None:
             self.semindex = self.getsemwaitindex(0)
         i = 0
         cube = []
-        cnt0 = self.md.cnt0
+        # flush semaphores before collecting images
+        self.semflush(self.semindex)
         while i < n:
+        	# collect each new image
             self.semwait(self.semindex)
-            if self.md.cnt0 == cnt0: 
-                continue # stop gap until ImageStreamIOWrap has semaphore flushing
             cube.append(self.grab_latest())
             i += 1
         return cube
-
 
 if __name__ == '__main__':
     pass
