@@ -118,5 +118,24 @@ class ImageStream(shmio.Image):
             i += 1
         return cube
 
+def send_dm_poke(shmim_name, x, y, val):
+    shmim = ImageStream(shmim_name)
+    curvals = shmim.grab_latest()
+    curvals[y, x] = val
+    shmim.write(curvals)
+
+def console_send_dm_poke():
+    import argparse
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('shmim_name', type=str, help='Name of shared memory name (ex: dm00disp01)')
+    parser.add_argument('x', type=int, help='x coordinate (0-indexed)')
+    parser.add_argument('y', type=int, help='y coordinate (0-indexed)')
+    parser.add_argument('val', type=float, help='poke size in microns')
+
+    args = parser.parse_args()
+
+    send_dm_poke(args.shmim_name, args.x, args.y, args.val)
+
 if __name__ == '__main__':
     pass
