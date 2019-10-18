@@ -65,7 +65,6 @@ def map_index2d_to_index1d_2K(index2d):
     arr[index2d] = 1.0
     return np.where(map_square_to_vector_2K(arr))
 
-
 def mask_2K():
     mask = np.zeros((50,50), dtype=bool)
     circmask = draw.circle(24.5,24.5,25.6,(50,50))
@@ -100,13 +99,17 @@ def format_mpl_coord_2K(ax):
     def format_coord(x, y):
         xint = int(np.rint(x))
         yint = int(np.rint(y))
-        return f'x={xint}, y={yint}, actuator number={map_index2d_to_index1d_2K((yint, xint))[0][0]}'
+        try:
+            act = map_index2d_to_index1d_2K((yint, xint))[0][0]
+        except IndexError:
+            act = None
+        return f'x={xint}, y={yint}, actuator number={act}'
     ax.format_coord = format_coord
 
 def format_mpl_connection_2K(im, conn_types):
     def format_cursor_data(data):
         val = int(data) -1
-        if val < 0: return 'None'
+        if val < 0: return ''
         return f', connection={conn_types[val]}'
     im.format_cursor_data = format_cursor_data
 
@@ -131,7 +134,48 @@ def display_actuator_connections(filename=None):
 
     return fig, ax
 
-def check_actuator_functionality(zrespM, zrespM_ref=None, actuator_mapfile=None, sigma=2, display=False):
+
+def display_interconnect_connections(connector, actuator_mapfile=None, ax=None, flagged_acts=None):
+
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4,3))
+
+    connection_mapping = read_actuator_connection_mapping(filename=actuator_mapfile, return_dump=True)
+    act_mapping = read_actuator_connection_mapping(filename=actuator_mapfile, return_dump=False)
+
+    connections = act_mapping == connector
+    connection_mapping_subset = connection_mapping[connections]
+
+    row = np.asarray([a.split('-')[1][0] for a in connection_mapping_subset['samtec']])
+    rowsort = np.argsort(row)[::-1]
+    row = row[rowsort]
+    col = np.asarray([int(a.split('-')[1][1:]) for a in connection_mapping_subset['samtec']])[rowsort]
+    
+    actuators = connection_mapping_subset['actuator'][rowsort]
+    
+    ax.scatter(col, row)
+    ax.set_title(connector)
+
+    if flagged_acts is not None:
+        flagged_idx = np.intersect1d(flagged_acts, actuators, return_indices=True)[-1]
+        ax.scatter(col[flagged_idx], row[flagged_idx], marker='x')
+
+    rowvals = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K']
+    rowvals.reverse()
+    actdict = {str(c) + r : a for c, r, a in zip(col, row, actuators)}
+    
+    def format_coord(x, y):
+        yval = rowvals[int(np.rint(y))]
+        xval = int(np.rint(x))
+        act = actdict.get(str(xval) + yval, None)
+        if act in flagged_acts:
+            return f'x={xval}, y={yval}, act={actdict.get(str(xval) + yval, None)} (flagged)'
+        else:
+            return f'x={xval}, y={yval}, act={actdict.get(str(xval) + yval, None)}'
+
+    ax.format_coord = format_coord
+
+def check_actuator_functionality(zrespM, zrespM_ref=None, actuator_mapfile=None, sigma=2, display=False, display_samtecs=False):
     '''
     Flag suspicious actuators.
 
@@ -167,11 +211,12 @@ def check_actuator_functionality(zrespM, zrespM_ref=None, actuator_mapfile=None,
         
     std = np.std((rms-rms_ref)[mask_2K()])
     bad = np.abs(rms-rms_ref) > std*sigma
-    bad_mapping = np.where(map_square_to_vector_2K(bad))[0]
+    flagged_acts = np.where(map_square_to_vector_2K(bad))[0]
         
     # map back to megarray-samtec connection
     actuator_mapping = read_actuator_connection_mapping(actuator_mapfile)
     connection_mapping = actuator_mapping[map_square_to_vector_2K(bad)]
+    conn_types = np.unique(actuator_mapping)
     
     connect_types = np.unique(actuator_mapping)
     logger.warning(f'Possible Bad Connections:')
@@ -196,7 +241,6 @@ def check_actuator_functionality(zrespM, zrespM_ref=None, actuator_mapfile=None,
         
         #display actuator connections
         numeric_mapping = np.zeros(2040)
-        conn_types = np.unique(actuator_mapping)
         for i, c in enumerate(conn_types):
             numeric_mapping[actuator_mapping == c] = i + 1
             
@@ -217,12 +261,17 @@ def check_actuator_functionality(zrespM, zrespM_ref=None, actuator_mapfile=None,
 
         axes[1][1].bar(bad_cat, bad_count)
         axes[1][1].set_ylabel('N Flagged')
-
+        axes[1][1].set_xlabel('Samtec Connector')
         fig.tight_layout()
-        
-        return np.where(map_square_to_vector_2K(bad))[0], connection_mapping
+
+    if display_samtecs:
+        fig, axes = plt.subplots(4, 2, figsize=(9,9))
+        order = [7, 5, 6, 4, 3, 1, 2, 0]
+
+        for connector, ax in zip(conn_types, axes.flatten()[order]):
+            display_interconnect_connections(connector, actuator_mapfile=actuator_mapfile, ax=ax, flagged_acts=flagged_acts)
     
-    return bad_mapping, connection_mapping
+    return flagged_acts, connection_mapping
 
 def main():
     # parse command line arguments
