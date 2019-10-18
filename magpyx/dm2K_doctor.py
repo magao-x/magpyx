@@ -11,7 +11,8 @@ import numpy as np
 from skimage import draw
 
 import logging
-logger = logging.Logger('dm_doctor')
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('dm_doctor')
 
 def colorbar(mappable, *args, **kwargs):
     ax = mappable.axes
@@ -106,7 +107,7 @@ def format_mpl_connection_2K(im, conn_types):
     def format_cursor_data(data):
         val = int(data) -1
         if val < 0: return 'None'
-        return f', connector={conn_types[val]}'
+        return f', connection={conn_types[val]}'
     im.format_cursor_data = format_cursor_data
 
 def display_actuator_connections(filename=None):

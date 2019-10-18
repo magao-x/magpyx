@@ -33,8 +33,11 @@ def projected_basis(nterms, angle, fill_fraction, actuator_mask):
     '''
     from poppy.zernike import zernike_basis, arbitrary_basis
 
-    with fits.open(actuator_mask) as f:
-        dm_mask = f[0].data.astype(bool)
+    if isinstance(actuator_mask, str):
+        with fits.open(actuator_mask) as f:
+            dm_mask = f[0].data.astype(bool)
+    else:
+        dm_mask = actuator_mask
 
     nact = dm_mask.shape[0]
 
