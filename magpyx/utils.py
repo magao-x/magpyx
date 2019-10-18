@@ -92,7 +92,7 @@ class ImageStream(shmio.Image):
     def __enter__(self):
         return self
 
-    def __exit__(self):
+    def __exit__(self, exc_type, exc_value, tb):
         pass # eventually: self.close()
 
     def __getitem__(self, start, stop, step):
@@ -131,6 +131,14 @@ def send_dm_poke(shmim_name, x, y, val):
         curvals[y, x] = val
         shmim.write(curvals)
 
+def send_fits_to_shmim(shmim_name, fitsfile):
+    from astropy.io import fits
+    with ImageStream(shmim_name) as shim:
+        shmim = ImageStream(shmim_name)
+        with fits.open(fitsfile) as f:
+            data = f[0].data
+        shmim.write(data.astype(shmim.buffer.dtype))
+
 def console_send_dm_poke():
     import argparse
     parser = argparse.ArgumentParser()
@@ -143,6 +151,16 @@ def console_send_dm_poke():
     args = parser.parse_args()
 
     send_dm_poke(args.shmim_name, args.x, args.y, args.val)
+
+def console_send_fits_to_shmim():
+    import argparse
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('shmim_name', type=str, help='Name of shared memory name (ex: dm00disp01)')
+    parser.add_argument('fitsfile', type=str, help='Path to fits file.')
+    args = parser.parse_args()
+
+    send_fits_to_shmim(args.shmim_name, args.fitsfile)
 
 if __name__ == '__main__':
     pass
