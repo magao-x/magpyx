@@ -89,6 +89,12 @@ class ImageStream(shmio.Image):
         self.naxis = self.md.naxis
         self.semindex = None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self):
+        pass # eventually: self.close()
+
     def __getitem__(self, start, stop, step):
         return np.array(self.buffer[start:stop:step], copy=True)
 
@@ -119,10 +125,11 @@ class ImageStream(shmio.Image):
         return cube
 
 def send_dm_poke(shmim_name, x, y, val):
-    shmim = ImageStream(shmim_name)
-    curvals = shmim.grab_latest()
-    curvals[y, x] = val
-    shmim.write(curvals)
+    with ImageStream(shmim_name) as shim:
+        shmim = ImageStream(shmim_name)
+        curvals = shmim.grab_latest()
+        curvals[y, x] = val
+        shmim.write(curvals)
 
 def console_send_dm_poke():
     import argparse
