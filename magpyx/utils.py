@@ -98,6 +98,9 @@ class ImageStream(shmio.Image):
     def __getitem__(self, start, stop, step):
         return np.array(self.buffer[start:stop:step], copy=True)
 
+    def close(self):
+        self.__exit__()
+
     def grab_buffer(self):
         return np.array(self.buffer, copy=True)
 
@@ -139,6 +142,12 @@ def send_fits_to_shmim(shmim_name, fitsfile):
             data = f[0].data
         shmim.write(data.astype(shmim.buffer.dtype))
 
+def send_zeros_to_shmim(shmim_name):
+    with ImageStream(shmim_name) as shim:
+        shmim = ImageStream(shmim_name)
+        zeros = np.zeros_like(shmim.buffer)
+        shmim.write(zeros)
+
 def console_send_dm_poke():
     import argparse
     parser = argparse.ArgumentParser()
@@ -161,6 +170,15 @@ def console_send_fits_to_shmim():
     args = parser.parse_args()
 
     send_fits_to_shmim(args.shmim_name, args.fitsfile)
+
+def console_send_zeros_to_shmim():
+    import argparse
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('shmim_name', type=str, help='Name of shared memory name to 0 out. (ex: dm00disp01)')
+    args = parser.parse_args()
+
+    send_zeros_to_shmim(args.shmim_name)
 
 if __name__ == '__main__':
     pass
