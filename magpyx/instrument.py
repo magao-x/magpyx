@@ -173,20 +173,13 @@ def print_device_status(stdscr, name, devdict, row):
 
 def indi_send_status(client, cmd_dict, presetname, tol=1e-3, status_dict=None, wait_for_properties=True, curses=False, curses_auto_exit=True, timeout=None):
     '''
-    Send a list of commands
-    and return a dictionary
-    with the status of each
-    property/element.
-    
-    status_dict has keys:
-    
-             'current' : None,
-            'target' : None,
-            'status' : 'UNKNOWN',
-            'requested' : v,
-            'watcher'
-    
+    Send a dictionary of commands and return a dictionary whose values
+    are updated by purepyindi watchers.
+
+    Re-implements a version of the purepyindi `wait_for_state` watcher to
+    make the status dict accessible for status reporting in curses.
     ''' 
+
     # initialize status_dict
     if status_dict is None:
         status_dict = {key : {} for key in cmd_dict.keys()}
@@ -196,7 +189,7 @@ def indi_send_status(client, cmd_dict, presetname, tol=1e-3, status_dict=None, w
                                    wait_for_properties=wait_for_properties,
                                    return_dict_and_exit=True,
                                    timeout=timeout)
-    def watcher_closure(prop):
+    def watcher_closure(prop, *args):
         
         for elem in prop.elements.values():
             key = elem.identifier
@@ -333,7 +326,8 @@ def main():
     parser.add_argument('--nocurses', action='store_true', help='Disable curses status reporting.')
     parser.add_argument('--hold', action='store_true', help='Keep curses status up until sigint is received [Default: exit 5 sec after all devices are ready].')
     parser.add_argument('--timeout', type=float, default=10., help='Time out after trying for X seconds [Default: 10 sec].')
-
+    parser.add_argument('--presetfile', type=str, default='/opt/MagAOX/config/inspresets.conf',
+                        help='Specify the path to the presets file [Default: "/opt/MagAOX/config/inspresets.conf".')
 
     args = parser.parse_args()
 
@@ -341,7 +335,7 @@ def main():
         parser.print_help()
         return
 
-    presets = parse_presets('/opt/MagAOX/config/inspresets.conf')
+    presets = parse_presets(args.presetfile)
 
     if args.preset is not None:
         client = indi.INDIClient(args.host, args.port)
