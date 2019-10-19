@@ -45,7 +45,7 @@ def get_value(client, device, prop, elem):
     
     Returns: element value
     '''
-    return client['{}.{}.{}'.format(device, prop, elem)]
+    return client[f'{device}.{prop}.{elem}']
 
 def send_value(client, device, prop, elem, value):
     '''
@@ -66,9 +66,9 @@ def send_value(client, device, prop, elem, value):
     Returns: nothing
     
     '''
-    client['{}.{}.{}'.format(device, prop, elem)] = value
+    client[f'{device}.{prop}.{elem}'] = value
        
-def get_zmode_vector(client, device, modes):
+def get_zmode_vector(client, device, modes, prop='current_amps'):
     '''
     Get a vector of current zernike modes
 
@@ -88,11 +88,11 @@ def get_zmode_vector(client, device, modes):
     amps = []
     for n in modes:
         elemname = '{:02}'.format(n)
-        value = get_value(client, device, 'current_amps', elemname)
+        value = get_value(client, device, prop, elemname)
         amps.append(value)
     return amps
 
-def send_zmode_amplitude(client, device, mode, amp):
+def send_zmode_amplitude(client, device, mode, amp, prop='target_amps'):
     '''
     Set a single mode amplitude
 
@@ -106,9 +106,9 @@ def send_zmode_amplitude(client, device, mode, amp):
             Mode coefficient in microns RMS.
             
     '''
-    client['{}.{}.{}'.format(device, 'target_amps', mode)] = amp
+    client[f'{device}.{prop}.{mode}'] = amp
     
-def send_zmode_vector(client, device, modes, amps):
+def send_zmode_vector(client, device, modes, amps, prop='target_amps'):
     '''
     Set many mode amplitudes
 
@@ -130,9 +130,9 @@ def send_zmode_vector(client, device, modes, amps):
         mode = '{:02}'.format(n)
         #print(mode, a)
         #send_value(client, device, 'target_amps', mode, a)
-        send_zmode_amplitude(client, device, mode, a)
+        send_zmode_amplitude(client, device, mode, a, prop=prop)
         
-def zero_dm(client, device):
+def zero_dm(client, device, prop='current_amps'):
     '''
     Set all mode amplitudes to 0.
 
@@ -141,106 +141,11 @@ def zero_dm(client, device):
         device : str
             Device name
     '''
-    nmodes = len(client.devices[device].properties['current_amps'].elements)
+    nmodes = len(client.devices[device].properties[prop].elements)
     zeros = np.zeros(nmodes)
     send_zmode_vector(client, device, range(nmodes), zeros)
 
-
-
-#-----shared memory interaction-----
-
-
-def grab_images(shmim, nframes):
-    '''
-    Grab nframes from shared memory.
-    
-    This function tries to be smart about
-    handling the buffer.
-
-    Parameters:
-        shmim: ImageStreamIOWrap.Image object
-            Open image stream
-        nframes: int
-            Number of sequential frames to capture
-
-    Returns:
-        images : array like
-            Z x Y x X Array of images
-    '''
-    
-    # find buffer length
-    size = shmim.md.size
-    buffer = size[-1]
-    
-    # figure out how many buffers to read until you've accumulated enough frames
-    nwhole, nrem = np.divmod(nframes, buffer)
-    images = []
-    
-    # grab whole buffer nwhole times
-    cnt0 = shmim.md.cnt0
-    for n in range(nwhole):
-        nimages = buffer # take the whole buffer
-        cnt0 = shmim.md.cnt0 # absolute frame count
-        images.extend(np.array(shmim).T.astype(float))
-        # wait for the buffer to entirely clear out
-        updated = False
-        if n == (nwhole-1):
-            updated = True #skip the wait after taking the last set of frames
-        while not updated:
-            sleep(0.02)
-            if shmim.md.cnt0 - cnt0  >= nimages: updated=True
-
-    # grab partial buffer for the remainder
-    # first, wait for nrem new frames to avoid duplicates
-    nimages = nrem
-    updated = False
-    while not updated:
-        sleep(0.02)
-        if shmim.md.cnt0 - cnt0  >= nimages: updated=True
-    cnt1 = shmim.md.cnt1 # most recent image in buffer
-    newims = np.take(np.array(shmim).T, range(cnt1+1-nimages,cnt1+1), axis=0, mode='wrap').astype(float)
-    images.extend(newims)
-    
-    return images
-    
-def grab_image(shmim):
-    '''
-    Grab a single image from the shmim buffer.
-
-    Parameters:
-        shmim: ImageStreamIOWrap.Image object
-            Open image stream
-
-    Returns: Y x X image
-    '''
-    idx = shmim.md.cnt1 #most recent frame
-    return np.array(shmim).T.astype(float)[idx]
-
-def shmim_to_fits(shmim, outname, overwrite=False):
-    '''
-    Intended to write a new flat out to
-    file after optimization but can be
-    used for anything, really.
-
-    Need to check whether this is transposing images correctly.
-    '''
-    image = grab_image(shmim)
-    fits.writeto(outname, image, overwrite=overwrite)
-
-
-def transfer_shmim(shmim1, shmim2):
-    '''
-    Take values from one shared memory image
-    and transfer to another, clearing the first
-    as you do so.
-    
-    shmim1 -> shmim2
-    '''
-    pass
-
-
-#-----the eye doctor-----
-
+#----- metrics and analysis -----
 
 def gaussfit(image, clipping=None):
     '''Fit a Gaussian'''
@@ -319,7 +224,7 @@ def gauss2d(fwhm, center, size):
     
     sigma = 2 * np.sqrt(2 * np.log(2) ) * fwhm
     
-    return 1./ ( 2 * np.pi * sigma**2) * np.exp( - ((x-x0)**2 + (y-y0)**2) / (2 * sigma**2)) #peak * np.exp(-4*np.log(2) * ((x-x0)**2 + (y-y0)**2) / fwhm**2)
+    return 1./ ( 2 * np.pi * sigma**2) * np.exp( - ((x-x0)**2 + (y-y0)**2) / (2 * sigma**2))
 
 def subtract_bg(image, stype=0):
     '''
@@ -392,131 +297,6 @@ def obscured_airy_disk(I0, wavelength, fnum, pixscale, cenyx, shape):
     #airy[np.isnan(airy)] = I0 * (1-eta)# handle central pixel
     
     return airy
-
-def obj_func(amp, client, device, shmim, nmode, nimages, metric, metric_dict):
-    '''
-    Function to minimize when eye doctoring.
-
-    TO DO: DOCUMENT ME.
-
-    This is the function that basically does all the work.
-    '''
-    
-    mode = '{:02}'.format(nmode)
-
-    send_zmode_amplitude(client, device, mode, amp)
-    sleep(0.02)
-
-    # wait for confirmation
-    updated = False
-    while not updated:
-        value = get_value(client, device, 'current_amps', mode)
-        if np.isclose(value, amp): updated=True
-        sleep(0.02)
-
-    sleep(0.05)
-    
-    if metric == 'airy':
-        arrlist = grab_images(shmim, nimages)
-        avg = np.mean(arrlist, axis=0)
-        
-        wavelength = metric_dict['wavelength']
-        fnum = metric_dict['fnum']
-        pixscale = metric_dict['pixscale']
-        cutout = metric_dict['cutout']
-        penalty = metric_dict['penalty']
-
-        params, avg_cutout = fit_airy_disk(avg, wavelength, fnum, pixscale, cutout=cutout)
-        model = obscured_airy_disk(avg.max(), wavelength, fnum, pixscale,
-                                   (params[0], params[1]), (cutout,cutout)) + params[2]
-        return airy_metric(avg_cutout, model, penalty=metri_dict['penalty'])
-    elif metric == 'peak': # assume peak height
-        avgpeak = get_image_peak(shmim, nimages)
-        return -avgpeak
-    elif metric == 'core':
-        radius = metric_dict['radius']
-        avgcore = get_image_coresum(shmim, nimages, metric_dict['radius'])
-        return -avgcore
-    elif metric == 'ratio':
-        radius1 = metric_dict['radius1']
-        radius2 = metric_dict['radius2']
-        ratio = get_image_core_ring_ratio(shmim, nimages, radius1, radius2)
-        return ratio
-    elif metric == 'pyramid':
-        pupil_mask = metric_dict['pupil_mask']
-        return get_pupil_variance(shmim, nimages, pupil_mask)
-    elif metric == 'debug':
-        return np.mean(grab_images(shmim, nimages),axis=0)
-    else:
-        raise ValueError('metric= {} but metric must be "peak", "airy", "core", "ratio", or "pyramid"!'.format(metric))
-        
-def optimize_strehl(client, device, shmim, nmode, nimages, bounds, metric, metric_dict={}, tol=1e-5):
-    res = minimize_scalar(obj_func, bounds=bounds,
-                          args=(client, device, shmim, nmode, nimages, metric, metric_dict),
-                          method='bounded', options={'maxiter' : 100, 'xatol' : tol})
-    return res['x']
-
-def optimize_modes(client, device, shmim, nimages, modes, bounds, metric, metric_dict={},
-                   baseline=True, coreradius=10, kind='grid', search_dict={}):
-
-    optimized_amps = []
-    cores = [] # metric
-
-    for i, n in enumerate(modes):
-
-        mode = '{:02}'.format(n)
-        
-        if baseline: # center on current/previous values
-            baseval = get_value(client, device, 'current_amps', mode)
-            curbounds = baseval + np.asarray(bounds)
-        else:
-            baseval = 0.
-            curbounds = bounds
-        
-        initamp = baseval
-        send_zmode_amplitude(client, device, mode, initamp)
-        sleep(.25)
-        #initpeak = get_image_peak(shmim, nimages)
-        #print('Initial Peak Height: {}'.format(initpeak))
-        initcore = obj_func(initamp, client, device, shmim, n, nimages, metric, metric_dict) #get_image_coresum(shmim, nimages, coreradius) #10
-        print('Mode {}: Initial Metric: {}'.format(mode, initcore))
-        
-        if kind == 'minimize':
-            tol = search_dict.get(1e-5)
-            best_amp = optimize_strehl(client, device, n, nimages, curbounds, metric, metric_dict=metric_dict, tol=tol)
-        else:
-            nsteps = search_dict.get('nsteps', 20)
-            nrepeats = search_dict.get('nrepeats', 3)
-            best_amp = grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict=metric_dict)
-            #print(best_amp)
-            if np.isnan(best_amp):
-                best_amp = baseval
-            
-        print('Mode {}: Optimized from {} to {:.2} microns'.format(mode, initamp, best_amp))
-        
-        # set DM mode to this amplitude and check whether it really
-        # improve the solutionbefore moving to next mode
-        send_zmode_amplitude(client, device, mode, best_amp)
-        sleep(0.25)
-
-        # take an image to get the peak height
-        #avgpeak = get_image_peak(shmim, nimages)
-        #print('Final Peak Height: {}.'.format(avgpeak))
-        finalcore = obj_func(best_amp, client, device, shmim, n, nimages, metric, metric_dict) #get_image_coresum(shmim, nimages, coreradius) #10
-        print('Mode {}: Final Metric: {}'.format(mode, finalcore))
-        optimized_amps.append(best_amp)
-        cores.append(finalcore)
-        
-        # reject solutions that don't seem to help
-        #if finalcore > initcore:
-        #    print('Final Core: {}. Accepting.'.format(finalcore))
-        #    optimized_amps.append(best_amp)
-        #else:
-        #    print('Final Core: {}. Rejecting.'.format(finalcore))
-        #    send_zmode_amplitude(client, device, mode, initamp)
-        #    optimized_amps.append(initamp)
-
-    return optimized_amps, cores
 
 def get_image_peak(shmim, nimages):
     arrlist = grab_images(shmim, nimages)
@@ -643,6 +423,137 @@ def get_pupil_variance(shmim, nimages, pupil_mask):
     images = grab_images(shmim, nimages)
     return np.var(np.mean(images, axis=0)[pupil_mask])
 
+#-----the eye doctor-----
+
+def obj_func(amp, client, device, shmim, nmode, nimages, metric, metric_dict):
+    '''
+    Function to minimize when eye doctoring.
+
+    TO DO: DOCUMENT ME.
+
+    This is the function that basically does all the work.
+
+
+    You should remove the sending and waiting for values from this func.
+    This func should just take input image(s) and produce a scalar output.
+    '''
+    
+    mode = '{:02}'.format(nmode)
+
+    send_zmode_amplitude(client, device, mode, amp)
+    sleep(0.02)
+
+    # wait for confirmation
+    updated = False
+    while not updated:
+        value = get_value(client, device, 'current_amps', mode)
+        if np.isclose(value, amp): updated=True
+        sleep(0.02)
+
+    sleep(0.05)
+    
+    if metric == 'airy':
+        arrlist = grab_images(shmim, nimages)
+        avg = np.mean(arrlist, axis=0)
+        
+        wavelength = metric_dict['wavelength']
+        fnum = metric_dict['fnum']
+        pixscale = metric_dict['pixscale']
+        cutout = metric_dict['cutout']
+        penalty = metric_dict['penalty']
+
+        params, avg_cutout = fit_airy_disk(avg, wavelength, fnum, pixscale, cutout=cutout)
+        model = obscured_airy_disk(avg.max(), wavelength, fnum, pixscale,
+                                   (params[0], params[1]), (cutout,cutout)) + params[2]
+        return airy_metric(avg_cutout, model, penalty=metric_dict['penalty'])
+    elif metric == 'peak': # assume peak height
+        avgpeak = get_image_peak(shmim, nimages)
+        return -avgpeak
+    elif metric == 'core':
+        radius = metric_dict['radius']
+        avgcore = get_image_coresum(shmim, nimages, metric_dict['radius'])
+        return -avgcore
+    elif metric == 'ratio':
+        radius1 = metric_dict['radius1']
+        radius2 = metric_dict['radius2']
+        ratio = get_image_core_ring_ratio(shmim, nimages, radius1, radius2)
+        return ratio
+    elif metric == 'pyramid':
+        pupil_mask = metric_dict['pupil_mask']
+        return get_pupil_variance(shmim, nimages, pupil_mask)
+    elif metric == 'debug':
+        return np.mean(grab_images(shmim, nimages),axis=0)
+    else:
+        raise ValueError('metric= {} but metric must be "peak", "airy", "core", "ratio", or "pyramid"!'.format(metric))
+        
+def optimize_strehl(client, device, shmim, nmode, nimages, bounds, metric, metric_dict={}, tol=1e-5):
+    res = minimize_scalar(obj_func, bounds=bounds,
+                          args=(client, device, shmim, nmode, nimages, metric, metric_dict),
+                          method='bounded', options={'maxiter' : 100, 'xatol' : tol})
+    return res['x']
+
+def optimize_modes(client, device, shmim, nimages, modes, bounds, metric, metric_dict={}, curr_prop='current_amps', targ_prop='target_amps',
+                   baseline=True, coreradius=10, kind='grid', search_dict={}):
+
+    optimized_amps = []
+    cores = [] # metric
+
+    for i, n in enumerate(modes):
+
+        mode = '{:02}'.format(n)
+        
+        if baseline: # center on current/previous values
+            baseval = get_value(client, device, curr_prop, mode)
+            curbounds = baseval + np.asarray(bounds)
+        else:
+            baseval = 0.
+            curbounds = bounds
+        
+        initamp = baseval
+        send_zmode_amplitude(client, device, mode, initamp, prop=targ_prop)
+        sleep(.25)
+        #initpeak = get_image_peak(shmim, nimages)
+        #print('Initial Peak Height: {}'.format(initpeak))
+        initcore = obj_func(initamp, client, device, shmim, n, nimages, metric, metric_dict) #get_image_coresum(shmim, nimages, coreradius) #10
+        print('Mode {}: Initial Metric: {}'.format(mode, initcore))
+        
+        if kind == 'minimize':
+            tol = search_dict.get(1e-5)
+            best_amp = optimize_strehl(client, device, n, nimages, curbounds, metric, metric_dict=metric_dict, tol=tol)
+        else:
+            nsteps = search_dict.get('nsteps', 20)
+            nrepeats = search_dict.get('nrepeats', 3)
+            best_amp = grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict=metric_dict)
+            #print(best_amp)
+            if np.isnan(best_amp):
+                best_amp = baseval
+            
+        print('Mode {}: Optimized from {} to {:.2} microns'.format(mode, initamp, best_amp))
+        
+        # set DM mode to this amplitude and check whether it really
+        # improve the solutionbefore moving to next mode
+        send_zmode_amplitude(client, device, mode, best_amp, prop=targ_prop)
+        sleep(0.25)
+
+        # take an image to get the peak height
+        #avgpeak = get_image_peak(shmim, nimages)
+        #print('Final Peak Height: {}.'.format(avgpeak))
+        finalcore = obj_func(best_amp, client, device, shmim, n, nimages, metric, metric_dict) #get_image_coresum(shmim, nimages, coreradius) #10
+        print('Mode {}: Final Metric: {}'.format(mode, finalcore))
+        optimized_amps.append(best_amp)
+        cores.append(finalcore)
+        
+        # reject solutions that don't seem to help
+        #if finalcore > initcore:
+        #    print('Final Core: {}. Accepting.'.format(finalcore))
+        #    optimized_amps.append(best_amp)
+        #else:
+        #    print('Final Core: {}. Rejecting.'.format(finalcore))
+        #    send_zmode_amplitude(client, device, mode, initamp)
+        #    optimized_amps.append(initamp)
+
+    return optimized_amps, cores
+
 def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict={}, debug=False):
     
     steps = np.linspace(curbounds[0], curbounds[1], num=nsteps, endpoint=True)
@@ -688,8 +599,7 @@ def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, m
     else:
         raise ValueError('kind must be "mean" or "fit"!')
 
-
-def focus_sequence(client, device, params, zero_dm=False):
+def focus_sequence(client, device, params, do_zero_dm=False):
     '''
     In the future, you might want to be able to choose the modes
     in the sequence. The problem is that I want to treat focus
@@ -705,8 +615,8 @@ def focus_sequence(client, device, params, zero_dm=False):
     that to run. That might help customization
     '''
     
-    if zero_dm:
-        zero_dm(client, device, range(36)) # maybe don't hardcode the number of modes
+    if do_zero_dm:
+        zero_dm(client, device) # maybe don't hardcode the number of modes
        
     metric = []
     for p in params:
@@ -758,16 +668,24 @@ def build_sequence(client, device, shmim, nimages, coreradius, metric, metric_di
 
 def parse_modes(modestr):
     '''
-    Turn '1...5' into [1,2,3,4,5]
-    and '1,3,5' into [1,3,5]
+    Parse command line inputs in the form
+    '1...5,7,8,10...13' into
+    a list like [1,2,3,4,5,7,8,10,11,12,13]
     '''
-    
-    if '...' in modestr:
-        vals = modestr.split('...')
-        return range(int(vals[0]), int(vals[1])+1)
-    elif ',' in modestr:
-        vals = modestr.split(',')
-        return [int(v) for v in vals]
+    comma_split = modestr.split(',')
+    mode_list = []
+    for c in comma_split:
+        if '...' in c:
+            m1, m2 = c.split('...')
+            int1, int2 = int(m1), int(m2)
+            if int1 > int2:
+                clist = range(int1, int2-1, -1)
+            else:
+                clist = range(int1, int2+1)
+            mode_list.extend(clist)
+        else:
+            mode_list.append(int(c))
+    return mode_list
 
 def main():
     '''
@@ -781,13 +699,16 @@ def main():
     * Run optimization
 
     Required arguments (ugh):
-    * INDI port
-    * camera shmim
-    * pupil mask shmim
-    * metric name
-    * metric parameters
-    * modes to optimize
-    * sequence parameters
+    * dmModes (wooferModes, ncpcModes, tweeterModes)
+    * camera shmim (camsci1, camsci2, lowfs??, etc)
+    * pupil mask shmim(???)
+
+    Optional arguments:
+    * INDI port (default = 7624)
+    * metric name (default = coresum?)
+    * metric parameters (default = ummmmmmm.)
+    * modes to optimize (default = 2...36)
+    * sequence parameters (defaults=whatever)
 
     '''
 
@@ -802,7 +723,7 @@ def main():
 
 
     # parse args
-    # allow something like modes='all',modes='low',modes='high', modes=2,3,4,7,10
+    # allow something modes=1...10, modes=2,3,4,7,10, modes=2,10...36
     pass
 
 

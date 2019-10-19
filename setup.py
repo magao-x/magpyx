@@ -40,8 +40,8 @@ setup(
 
     # add shell scripts here
     entry_points = {
-        'console_scripts': ['dm_project_zernikes=magpyx.project_zernikes:main',
-                            'dm_offload_matrix=magpyx.woofer_tweeter_offload:main',
+        'console_scripts': ['dm_project_zernikes=magpyx.dm.project_zernikes:main',
+                            'dm_offload_matrix=magpyx.dm.t2w_offload:main',
                             #'dm_eye_doctor_comprehensive=magpyx.eye_doctor:main',
                             #'dm_eye_doctor_mode=magpyx.eye_doctor:main'
                             'dm_send_poke=magpyx.utils:console_send_dm_poke',
