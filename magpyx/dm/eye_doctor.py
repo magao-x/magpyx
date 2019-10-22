@@ -43,6 +43,10 @@ def get_value(client, device, prop, elem, wait=False, timeout=None):
             Property name
         elem : str
             Element name
+        wait : bool
+            Wait for property to register on INDI
+        timeout: float
+            Time out after X seconds if the INDI property never registers.
     
     Returns: element value
     '''
@@ -65,6 +69,10 @@ def send_value(client, device, prop, elem, value, wait=False, timeout=None):
             Element name
         value : any
             Value to set
+        wait : bool
+            Wait for property to register on INDI
+        timeout: float
+            Time out after X seconds if the INDI property never registers.
 
     Returns: nothing
     
@@ -86,6 +94,22 @@ def zero_dm(client, device,):
     send_modes_and_wait(client, device, {m:0 for m in range(nmodes)})
 
 def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_properties=True, timeout=10):
+    '''
+    Send target commands via purepyindi and return only after current becomes the target.
+
+    Parameters:
+        client: purepyindi.INDIClient
+        device: str
+            INDI device name. Ex: wooferModes
+        mode_targ_dict : dict
+            Dictionary of modes and their corresponding target values in microns Ex {0: 0.3, 3: 0.5, 10: -0.1}
+        tol : float
+            Return when abs(current - value) < tol
+        wait_for_properties: bool
+            Wait for INDI properties to register?
+        timeout : float
+            Wait for X seconds before failing
+    '''
     status_dict = {}
     for mode, targ in mode_targ_dict.items():
         status_dict.update({
@@ -377,6 +401,26 @@ def get_pupil_variance(shmim, nimages, pupil_mask):
 def move_measure_metric(val, client, device, shmim, nmode, nimages, metric, metric_dict):
     '''
     Move the DM, take a measurement, and return the value of the metric.
+
+    Parameters:
+        val : float
+            Mode amplitude
+        client: purepyindi.INDIClient
+        device : str
+            INDI device name
+        shmim : magpyx.utils.ImageStream
+            camera image stream
+        nmode : int
+            Mode number
+        nimages : int
+            Number of images to collect from shmim
+        metric : func
+            Function that takes an image cube and returns a scalar
+        metric_dict : dict
+            keyword arguments to pass to metric func
+
+    Returns:
+        scalar output of metric, the value to minimize
     '''
 
     # move
@@ -393,7 +437,38 @@ def optimize_strehl(client, device, shmim, nmode, nimages, bounds, metric, metri
                           method='bounded', options={'maxiter' : 100, 'xatol' : tol})
     return res['x']
 
-def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict, search_dict={}, debug=False):
+def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, metric, metric_dict, skind='fit', debug=False):
+    '''
+    Sweep over a range of mode amplitudes and compute some metric for the PSF quality at each point.
+    Fit a quadratic and find the point that minimizes the metric.
+
+    Parameters:
+        client: purepyindi.INDIClient
+        device : str
+            INDI device name
+        shmim : magpyx.utils.ImageStream
+            camera image stream
+        n : int
+            Mode number
+        nimages : int
+            Number of images to collect from shmim
+        curbounds : array-like
+            2 element array-like with the lower and upper bounds of the search
+        nsteps : int
+            Number of steps to take. Sampled points follow np.linspace(curbounds[0], curbounds[1], num=nsteps)
+        metric : func
+            Function that takes an image cube and returns a scalar
+        metric_dict : dict
+            keyword arguments to pass to metric func
+        skind : str
+            If 'fit', find the minimum by fitting a quadratic. If 'mean', find the mean mode amplitude that gives a minimum.
+            Default: 'fit'
+        degug: bool
+            Return sampled metric points rather than the fit point that minimizes the metric. 
+
+    Returns:
+        mode amplitude that minimizes the metric
+    '''
     
     steps = np.linspace(curbounds[0], curbounds[1], num=nsteps, endpoint=True)
     
@@ -411,8 +486,6 @@ def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, m
     # skip processing and just pass the metric values back
     if debug:
         return steps, curves
-
-    skind = search_dict.get('kind', 'fit')
 
     if skind == 'mean':
         # get the mean min
@@ -438,17 +511,50 @@ def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, m
 def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid', search_dict={}, metric=get_image_coresum, metric_dict={},
                curr_prop='current_amps', targ_prop='target_amps', baseline=True):
     '''
+    Optimize a set of modes using a custom metric function evaluated from images from shmim as a function of 
+    modal coefficient amplitudes.
 
-    Predefined metrics:
-    get_image_coresum
-    peak
-    core
-    ratio
-    pyramid
+    Can either perform a Brent or grid search.
 
-    Metric functions:
-    func(imagecube, kw_arg1=sdf, kw_arg2=sdf)
+    By default, this tries to minimize the negative core of the PSF
+    as a proxy for the Strehl.
 
+    Can pass in a custom metric function of the form:
+
+    def my_metric(image_cube, kw_arg1=val1, kw_arg2=val2):
+        return scalar_value_to_minimize
+
+    where image_cube is a ZxYxX cube of images and keyword arguments are 
+    specified by the metric_dict argument.
+
+    Parameters:
+        client: purepyindi.INDIClient
+        device : str
+            INDI device name
+        shmim : magpyx.utils.ImageStream
+            camera image stream
+        nimages : int
+            Number of images to collect from shmim
+        modes : array-like
+            Modes to optimize
+        bounds : array-like
+            2 element array-like with the lower and upper bounds of the search
+        search_kind : str
+            Either 'grid' or 'brent'. Default: grid (generally more robust)
+        search_dict : dict
+            Search parameters. For grid, accepts keywords 'kind' : 'mean' or 'fit',
+            'nsteps' : int value, and 'nrepeats' : int value
+        metric : func
+            Function that takes an image cube and returns a scalar
+        metric_dict : dict
+            keyword arguments to pass to metric func
+        curr_prop : str
+            Current property. Default "current_amps". Will this ever change? I don't know.
+        targ_prop : str
+            Target property. Default "target_amps"
+        baseline : bool
+            Use the current mode amplitudes as the zero-point for the search? (centers search on 
+            this point). Default: True
     '''
 
     optimized_amps = []
@@ -471,16 +577,16 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
 
         # grid_sweep or optimize on metric
         # measurements outside of metric
-        if search_kind == 'minimize':
+        if search_kind == 'brent':
             tol = search_dict.get('tol', 1e-5)
             optval = optimize_strehl(client, device, n, nimages, curbounds, metric, metric_dict=metric_dict, tol=tol)
         elif search_kind == 'grid':
             nsteps = search_dict.get('nsteps', 20)
             nrepeats = search_dict.get('nrepeats', 3)
             optval = grid_sweep(client, device, shmim, n, nimages, curbounds,
-                                nsteps, nrepeats, metric, metric_dict=metric_dict)
+                                nsteps, nrepeats, metric, metric_dict, search_dict=search_dict)
         else:
-            raise ValueError('search_kind must be either "minimize" or "grid".')
+            raise ValueError('search_kind must be either "brent" or "grid".')
 
         # send to optimized value
         send_modes_and_wait(client, device, {f'{n:0>2}' : optval})
@@ -496,6 +602,56 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
 
 def build_sequence(client, device, shmim, nimages, metric=get_image_coresum, metric_dict={}, search_kind='grid', search_dict={}, curr_prop=None, targ_prop=None,
                    modes=range(2,36), ncluster=5, nrepeat=3, nseqrepeat=2, randomize=True, baseline=True, bounds=[-5e-3, 5e-3]):
+    '''
+    Construct a sequence of argument tuples to send to eye_doctor.
+    This is useful for building more complicated mode optimization
+    procedures.
+
+    Given a set of modes to optimize, this function splits them into smaller
+    clusters, shuffles them about, and makes repeated passes in optimizing the
+    modes.
+
+
+    Parameters:
+        client: purepyindi.INDIClient
+        device : str
+            INDI device name
+        shmim : magpyx.utils.ImageStream
+            camera image stream
+        nimages : int
+            Number of images to collect from shmim
+        metric : func
+            Function that takes an image cube and returns a scalar
+        metric_dict : dict
+            keyword arguments to pass to metric func
+        search_kind : str
+            Either 'grid' or 'brent'. Default: grid (generally more robust)
+        search_dict : dict
+            Search parameters. For grid, accepts keywords 'kind' : 'mean' or 'fit',
+            'nsteps' : int value, and 'nrepeats' : int value
+        curr_prop : str
+            Current property. Default "current_amps". Will this ever change? I don't know.
+        targ_prop : str
+            Target property. Default "target_amps"
+        modes : array-like
+            Modes to optimize
+        ncluster : int
+            Number of elements in a cluster. Long lists of modes are split into clusters of
+            this size.
+        nrepeat : int
+            Number of times to repeat the measurements in a given cluster.
+        nseqrepeat: int
+            Number of times to repeat the entire sequence.
+        randomize: bool
+            Shuffle the modes around within a cluster? Default: True.
+        baseline : bool
+            Use the current mode amplitudes as the zero-point for the search? (centers search on 
+            this point). Default: True
+        bounds : array-like
+            2 element array-like with the lower and upper bounds of the search
+
+    Returns: list of tuple arguments that can be passed to eye_doctor function
+    '''
     modes = list(modes)
     nmodes = len(modes)
 
@@ -527,7 +683,57 @@ def build_sequence(client, device, shmim, nimages, metric=get_image_coresum, met
     return args
 
 def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_coresum, metric_dict={}, search_kind='grid', search_dict={}, curr_prop=None, targ_prop=None,
-                             modes=range(2,36), ncluster=5, nrepeat=3, nseqrepeat=2, randomize=True, baseline=True, bounds=[-5e-3, 5e-3]):
+                             modes=range(2,36), ncluster=5, nrepeat=3, nseqrepeat=2, randomize=True, baseline=True, bounds=[-5e-3, 5e-3], focus_first=True):
+    '''
+    Perform a more involved / more global mode optimization
+    procedure.
+
+    Given a set of modes to optimize, this function splits them into smaller
+    clusters, shuffles them about, and makes repeated passes in optimizing the
+    modes.
+
+    Parameters:
+        client: purepyindi.INDIClient
+        device : str
+            INDI device name
+        shmim : magpyx.utils.ImageStream
+            camera image stream
+        nimages : int
+            Number of images to collect from shmim
+        metric : func
+            Function that takes an image cube and returns a scalar
+        metric_dict : dict
+            keyword arguments to pass to metric func
+        search_kind : str
+            Either 'grid' or 'brent'. Default: grid (generally more robust)
+        search_dict : dict
+            Search parameters. For grid, accepts keywords 'kind' : 'mean' or 'fit',
+            'nsteps' : int value, and 'nrepeats' : int value
+        curr_prop : str
+            Current property. Default "current_amps". Will this ever change? I don't know.
+        targ_prop : str
+            Target property. Default "target_amps"
+        modes : array-like
+            Modes to optimize
+        ncluster : int
+            Number of elements in a cluster. Long lists of modes are split into clusters of
+            this size.
+        nrepeat : int
+            Number of times to repeat the measurements in a given cluster.
+        nseqrepeat: int
+            Number of times to repeat the entire sequence.
+        randomize: bool
+            Shuffle the modes around within a cluster? Default: True.
+        baseline : bool
+            Use the current mode amplitudes as the zero-point for the search? (centers search on 
+            this point). Default: True
+        bounds : array-like
+            2 element array-like with the lower and upper bounds of the search
+        focus_first : bool
+            Start with focus? Default: True.
+
+    Returns: list of tuple arguments that can be passed to eye_doctor function
+    '''
 
     # build sequence
     args_seq = build_sequence(client, device, shmim, nimages, metric=metric, metric_dict=metric_dict, search_kind=search_kind,
@@ -535,7 +741,7 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
                               nrepeat=nrepeat, nseqrepeat=nseqrepeat, randomize=randomize, baseline=baseline, bounds=bounds)
 
     # if focus is requested, do it first (it gets repeated later but oh well)
-    if 2 in modes:
+    if focus_first:
         logger.info('Optimizing focus first!')
         eye_doctor(client, device, shmim, nimages, [2,], bounds, search_kind=search_kind, search_dict=search_dict, metric=metric,
                    metric_dict=metric_dict, curr_prop=curr_prop, targ_prop=targ_prop, baseline=baseline)
@@ -639,21 +845,34 @@ def console_comprehensive():
                              ncluster=5, nrepeat=args.nclusterrepeats, nseqrepeat=args.nseqrepeat, randomize=True,
                              curr_prop='current_amps', targ_prop='target_amps', baseline=~args.reset)
 
-def write_new_flat(dm, filename=None):
+def write_new_flat(dm, filename=None, update_symlink=False):
+    '''
+    Write out a new flat to FITS after eye doctoring.
+
+    Parameters:
+        dm : str
+            Name of DM. If not "woofer", "ncpc", or "tweeter", this is
+            taken to be the name of a shared memory image
+        filename : str
+            FITS file to write out. If not provided, defaults to 
+            /opt/MagAOX/calib/dm/<dm_name/flats/flat_optimized_<dm_name>_<date>.fits
+        update_symlink:
+            Update the symlink at /opt/MagAOX/calib/dm/<dm_name/flat.fits? Default: False
+    '''
     from astropy.io import fits
     from datetime import datetime
     import os
 
     if dm.upper() == 'WOOFER':
-        outpath = '/opt/MagAOX/calib/dm/alpao_bax150/flats/'
+        outpath = '/opt/MagAOX/calib/dm/alpao_bax150/'
         dm_name = 'ALPAOBAX150'
         shm_name = 'dm00disp00'
     elif dm.upper() == 'NCPC':
-        outpath = '/opt/MagAOX/calib/dm/alpao_bax260/flats/'
+        outpath = '/opt/MagAOX/calib/dm/alpao_bax260/'
         dm_name = 'ALPAOBAX260'
         shm_name = 'dm02disp00'
     elif dm.upper() == 'TWEETER':
-        outpath = '/opt/MagAOX/calib/dm/bmc_2k/flats/'
+        outpath = '/opt/MagAOX/calib/dm/bmc_2k/'
         dm_name = 'BMC2K'
         shm_name = 'dm01disp00'
     else:
@@ -664,7 +883,7 @@ def write_new_flat(dm, filename=None):
 
     if filename is None:
         date = datetime.now().strftime("%Y%m%d-%H%M%S")
-        outname = os.path.join(outpath, f'flat_optimized_{dm_name}_{date}.fits')
+        outname = os.path.join(outpath, 'flats', f'flat_optimized_{dm_name}_{date}.fits')
     else:
         outname = filename
 
@@ -674,14 +893,22 @@ def write_new_flat(dm, filename=None):
     logger.info(f'Writing image at {shm_name} to {outname}.')
     fits.writeto(outname, flat)
 
+    if update_symlink:
+        sym_path = os.path.join(outpath, 'flat.fits')
+        if os.path.islink(sym_path):
+            os.remove(sym_path)
+        os.symlink(outname, sym_path)
+
 def console_write_new_flat():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('dm', type=str, help='DM. One of ["woofer", "ncpc", "tweeter"]')
-    parser.add_argument('--filename', default=None, type=str, help='Path of file to write out. Default: /opt/MagAOX/calib/dm/<dm_name>/flats/flat_optimized_<dm name>_<date/time>.fits')
+    parser.add_argument('--filename', default=None, type=str,
+                        help='Path of file to write out. Default: /opt/MagAOX/calib/dm/<dm_name>/flats/flat_optimized_<dm name>_<date/time>.fits')
+    parser.add_argument('--symlink', action='store_true',
+                        help='Symlink flat to /opt/MagAOX/calib/dm/<dm_name>/flats/flat.fits or at the custom path provided with the "--filename" flag.')
     args = parser.parse_args()
-    write_new_flat(args.dm, args.filename)
-
+    write_new_flat(args.dm, filename=args.filename, update_symlink=args.symlink)
 
 if __name__ == '__main__':
     pass
