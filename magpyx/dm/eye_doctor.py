@@ -16,8 +16,6 @@ import numpy as np
 import purepyindi as indi
 
 from astropy.stats import sigma_clipped_stats
-from astropy.io import fits
-
 from scipy.optimize import leastsq, minimize_scalar, dual_annealing
 from scipy.ndimage import center_of_mass
 from scipy import stats
@@ -48,8 +46,6 @@ def get_value(client, device, prop, elem, wait=False, timeout=None):
     
     Returns: element value
     '''
-    return 1.0 # FIX ME
-
     if wait:
         client.wait_for_properties([f'{device}.{prop}',], timeout=timeout)
     return client[f'{device}.{prop}.{elem}']
@@ -101,8 +97,7 @@ def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_prope
                 'value': targ,
                 'test': lambda current, value, tolerance=tol: abs(current - value) < tolerance,
             }})
-    return # FIX ME
-    #return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
+    return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
 
 #----- metrics and analysis -----
 
@@ -409,7 +404,7 @@ def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, m
             send_modes_and_wait(client, device, {f'{n:0>2}' : s})
             #sleep(0.1)
             #measure
-            images = np.zeros((1,50,50)) #shmim.grab_many(nimages) FIX ME
+            images = shmim.grab_many(nimages)
             #metric
             curves[i, j] = metric(images, **metric_dict)
 
@@ -470,7 +465,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
             curbounds = bounds
 
         # measure
-        meas_init = np.zeros((1,50,50)) #shmim.grab_many(nimages) FIX ME
+        meas_init = shmim.grab_many(nimages)
         # metric
         val_init = metric(meas_init, **metric_dict)
 
@@ -549,6 +544,27 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
     for args in args_seq:
         eye_doctor(*args)
 
+def parse_modes(modestr):
+    '''
+    Parse command line inputs in the form
+    '1...5,7,8,10...13' into
+    a list like [1,2,3,4,5,7,8,10,11,12,13]
+    '''
+    comma_split = modestr.split(',')
+    mode_list = []
+    for c in comma_split:
+        if '...' in c:
+            m1, m2 = c.split('...')
+            int1, int2 = int(m1), int(m2)
+            if int1 > int2:
+                clist = range(int1, int2-1, -1)
+            else:
+                clist = range(int1, int2+1)
+            mode_list.extend(clist)
+        else:
+            mode_list.append(int(c))
+    return mode_list
+
 def console_modal():
 
     # parse arguments
@@ -623,75 +639,49 @@ def console_comprehensive():
                              ncluster=5, nrepeat=args.nclusterrepeats, nseqrepeat=args.nseqrepeat, randomize=True,
                              curr_prop='current_amps', targ_prop='target_amps', baseline=~args.reset)
 
-def parse_modes(modestr):
-    '''
-    Parse command line inputs in the form
-    '1...5,7,8,10...13' into
-    a list like [1,2,3,4,5,7,8,10,11,12,13]
-    '''
-    comma_split = modestr.split(',')
-    mode_list = []
-    for c in comma_split:
-        if '...' in c:
-            m1, m2 = c.split('...')
-            int1, int2 = int(m1), int(m2)
-            if int1 > int2:
-                clist = range(int1, int2-1, -1)
-            else:
-                clist = range(int1, int2+1)
-            mode_list.extend(clist)
-        else:
-            mode_list.append(int(c))
-    return mode_list
+def write_new_flat(dm, filename=None):
+    from astropy.io import fits
+    from datetime import datetime
+    import os
 
-def main():
-    '''
-    Steps to getting to optimization:
-    * Connect to client
-    * Connect to shmim
-        * If metric is 'pyramid', need to get pupil masks shmim too
-    * Set up sequence(s)
-        * allow something like modes='all',modes='low',modes='high', modes=2,3,4,7,10
-        * need to fix defocus bug (try modes=1,2,3 -- it drops one of them)
-    * Run optimization
+    if dm.upper() == 'WOOFER':
+        outpath = '/opt/MagAOX/calib/dm/alpao_bax150/flats/'
+        dm_name = 'ALPAOBAX150'
+        shm_name = 'dm00disp00'
+    elif dm.upper() == 'NCPC':
+        outpath = '/opt/MagAOX/calib/dm/alpao_bax260/flats/'
+        dm_name = 'ALPAOBAX260'
+        shm_name = 'dm02disp00'
+    elif dm.upper() == 'TWEETER':
+        outpath = '/opt/MagAOX/calib/dm/bmc_2k/flats/'
+        dm_name = 'BMC2K'
+        shm_name = 'dm01disp00'
+    else:
+        logger.warning('Unknown DM provided. Interpreting as a shared memory image name.')
+        shm_name = dm
+        dm_name = dm
+        outpath = '.'
 
-    Required arguments (ugh):
-    * dmModes (wooferModes, ncpcModes, tweeterModes)
-    * camera shmim (camsci1, camsci2, lowfs??, etc)
-    * pupil mask shmim(???)
+    if filename is None:
+        date = datetime.now().strftime("%Y%m%d-%H%M%S")
+        outname = os.path.join(outpath, f'flat_optimized_{dm_name}_{date}.fits')
+    else:
+        outname = filename
 
-    Optional arguments:
-    * INDI port (default = 7624)
-    * metric name (default = coresum?)
-    * metric parameters (default = ummmmmmm.)
-    * modes to optimize (default = 2...36)
-    * sequence parameters (defaults=whatever)
+    shmim = ImageStream(shm_name)
+    flat = shmim.grab_latest()
 
-    '''
+    logger.info(f'Writing image at {shm_name} to {outname}.')
+    fits.writeto(outname, flat)
 
+def console_write_new_flat():
     import argparse
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('portINDI', type=str, default=7624, help='INDI Port')
-    parser.add_argument('device', type=str, help='INDI device with dm modes. [wooferModes, ncpcModes, tweeterModes]')
-    parser.add_argument('shmim', type=str, help='Shared memory image [camsci1, camsci2, camlowfs, etc.]')
-    parser.add_argument('metric', type=str, help='Optimization metric: "peak", "core", "ratio", or "pyramid"')
-    parser.add_argument('modes', type=str, help='Range of modes [x...y] or comma-separated list of modes [x,y,z]')
-
-
-    # parse args
-    # allow something modes=1...10, modes=2,3,4,7,10, modes=2,10...36
-
-
-    # connect to INDI server
-
-    # connect to shmim
-
-    # build sequence?
-
-    # optimize!
-    pass
+    parser.add_argument('dm', type=str, help='DM. One of ["woofer", "ncpc", "tweeter"]')
+    parser.add_argument('--filename', default=None, type=str, help='Path of file to write out. Default: /opt/MagAOX/calib/dm/<dm_name>/flats/flat_optimized_<dm name>_<date/time>.fits')
+    args = parser.parse_args()
+    write_new_flat(args.dm, args.filename)
 
 
 if __name__ == '__main__':
-    main()
+    pass

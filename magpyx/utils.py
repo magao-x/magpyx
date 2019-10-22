@@ -142,6 +142,13 @@ def send_fits_to_shmim(shmim_name, fitsfile):
             data = f[0].data
         shmim.write(data.astype(shmim.buffer.dtype))
 
+def send_shmim_to_fits(shmim_name, fitsfile):
+    from astropy.io import fits
+    with ImageStream(shmim_name) as shim:
+        shmim = ImageStream(shmim_name)
+        data = shmim.grab_latest()
+    fits.writeto(fitsfile, data)
+
 def send_zeros_to_shmim(shmim_name):
     with ImageStream(shmim_name) as shim:
         shmim = ImageStream(shmim_name)
@@ -170,6 +177,16 @@ def console_send_fits_to_shmim():
     args = parser.parse_args()
 
     send_fits_to_shmim(args.shmim_name, args.fitsfile)
+
+def console_send_shmim_to_fits():
+    import argparse
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('shmim_name', type=str, help='Name of shared memory name (ex: dm00disp01)')
+    parser.add_argument('fitsfile', type=str, help='Path to fits file.')
+    args = parser.parse_args()
+
+    send_shmim_to_fits(args.shmim_name, args.fitsfile)
 
 def console_send_zeros_to_shmim():
     import argparse
