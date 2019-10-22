@@ -42,8 +42,8 @@ setup(
     entry_points = {
         'console_scripts': ['dm_project_zernikes=magpyx.dm.project_zernikes:main',
                             'dm_offload_matrix=magpyx.dm.t2w_offload:main',
-                            #'dm_eye_doctor_comprehensive=magpyx.eye_doctor:main',
-                            #'dm_eye_doctor_mode=magpyx.eye_doctor:main'
+                            'dm_eye_doctor_comprehensive=magpyx.dm.eye_doctor:console_comprehensive',
+                            'dm_eye_doctor_mode=magpyx.dm.eye_doctor:console_modal',
                             'dm_send_poke=magpyx.utils:console_send_dm_poke',
                             'send_fits_to_shmim=magpyx.utils:console_send_fits_to_shmim',
                             'send_zeros_to_shmim=magpyx.utils:console_send_zeros_to_shmim',

@@ -12,7 +12,7 @@ from skimage import draw
 
 import logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('dm_doctor')
+logger = logging.getLogger('connection_doctor')
 
 def colorbar(mappable, *args, **kwargs):
     ax = mappable.axes
