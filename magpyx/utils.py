@@ -73,37 +73,58 @@ def indi_send_and_wait(client, cmd_dict, tol=1e-3, wait_for_properties=False, ti
         
     return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
 
+def _is_open(func):
+    def deco(self, *args, **kwargs):
+        if self.is_open:
+            return func(self, *args, **kwargs)
+        else:
+            raise RuntimeError('image stream is not open!')
+    return deco
+
 class ImageStream(shmio.Image):
     '''
-    Convenience class to make interacting with image stream circular
-    buffers without copying the entire buffer every time a little
-    easier.
+    Convenience class to make interacting
+    with image stream a little easier.
     '''
+    SUCCESS_CODE = 0
 
     def __init__(self, name):
         super().__init__()
-        self.open(name)
-        if self.memsize == 0:
-            raise RuntimeError(f'Could not open shared memory image "{name}"!')
+        self.name = name
+        self.is_open = False
+        self.open()
         self.buffer = np.array(self, copy=False).T
         self.naxis = self.md.naxis
         self.semindex = None
 
     def __enter__(self):
+        if not self.is_open:
+            self.open(self.name)
         return self
 
     def __exit__(self, exc_type, exc_value, tb):
-        pass # eventually: self.close()
+        self.close()
 
     def __getitem__(self, start, stop, step):
         return np.array(self.buffer[start:stop:step], copy=True)
 
-    def close(self):
-        self.__exit__()
+    def open(self):
+        ret = super().open(self.name)
+        if ret != self.SUCCESS_CODE:
+            raise RuntimeError(f'Could not open shared memory image "{name}"!')
+        else:
+            self.is_open = True
 
+    @_is_open
+    def close(self):
+        super().close()
+        self.is_open = False
+
+    @_is_open
     def grab_buffer(self):
         return np.array(self.buffer, copy=True)
 
+    @_is_open
     def grab_latest(self):
         if self.naxis  < 3:
             return np.array(self.buffer, copy=True)
@@ -112,6 +133,7 @@ class ImageStream(shmio.Image):
             #print(f'Got a semaphore! Buffer index: {self.md.cnt0}')
             return np.array(self.buffer[cnt1], copy=True)
 
+    @_is_open
     def grab_many(self, n):
     	# find a free semaphore to wait on
         if self.semindex is None:
