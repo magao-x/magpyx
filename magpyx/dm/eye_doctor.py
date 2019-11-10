@@ -121,6 +121,7 @@ def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_prope
                 'value': targ,
                 'test': lambda current, value, tolerance=tol: abs(current - value) < tolerance,
             }})
+    print(status_dict)
     return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
 
 #----- metrics and analysis -----
@@ -557,6 +558,9 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
             this point). Default: True
     '''
 
+    # wait for devices to appear on INDI client
+    client.wait_for_properties([f'{device}.{targ_prop}',])
+
     optimized_amps = []
     metric_vals = []
     # loop over modes
@@ -564,7 +568,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
 
         # baseline centers the search or sweep around the current value 
         if baseline:
-            baseval = get_value(client, device, curr_prop, n)
+            baseval = get_value(client, device, curr_prop, f'{n:0>2}')
             curbounds = baseval - np.asarray(bounds)
         else:
             baseval = 0.
@@ -584,7 +588,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
             nsteps = search_dict.get('nsteps', 20)
             nrepeats = search_dict.get('nrepeats', 3)
             optval = grid_sweep(client, device, shmim, n, nimages, curbounds,
-                                nsteps, nrepeats, metric, metric_dict, search_dict=search_dict)
+                                nsteps, nrepeats, metric, metric_dict)
         else:
             raise ValueError('search_kind must be either "brent" or "grid".')
 
