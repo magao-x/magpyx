@@ -111,7 +111,7 @@ class ImageStream(shmio.Image):
     def open(self):
         ret = super().open(self.name)
         if ret != self.SUCCESS_CODE:
-            raise RuntimeError(f'Could not open shared memory image "{name}"!')
+            raise RuntimeError(f'Could not open shared memory image "{self.name}"!')
         else:
             self.is_open = True
 

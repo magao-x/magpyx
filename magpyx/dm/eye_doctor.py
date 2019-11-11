@@ -116,12 +116,10 @@ def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_prope
             f'{device}.current_amps.{mode:0>2}': {
                 'value': targ,
                 'test': lambda current, value, tolerance=tol: abs(current - value) < tolerance,
-            },
-            f'{device}.target_amps.{mode:0>2}': {
-                'value': targ,
-                'test': lambda current, value, tolerance=tol: abs(current - value) < tolerance,
+            #},
+            #f'{device}.target_amps.{mode:0>2}': {
+            #    'value': targ,
             }})
-    print(status_dict)
     return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
 
 #----- metrics and analysis -----
@@ -569,7 +567,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
         # baseline centers the search or sweep around the current value 
         if baseline:
             baseval = get_value(client, device, curr_prop, f'{n:0>2}')
-            curbounds = baseval - np.asarray(bounds)
+            curbounds = np.asarray(bounds) - baseval
         else:
             baseval = 0.
             curbounds = bounds
@@ -589,6 +587,8 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
             nrepeats = search_dict.get('nrepeats', 3)
             optval = grid_sweep(client, device, shmim, n, nimages, curbounds,
                                 nsteps, nrepeats, metric, metric_dict)
+            if np.isnan(optval):
+                optval = baseval
         else:
             raise ValueError('search_kind must be either "brent" or "grid".')
 
@@ -597,7 +597,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
         #sleep(0.1)
 
         # measure
-        meas_final = np.zeros((1,50,50)) # FIX ME #shmim.grab_many(nimages)
+        meas_final = shmim.grab_many(nimages)
         # metric
         val_final = metric(meas_final, **metric_dict)
 
@@ -805,7 +805,7 @@ def console_modal():
     eye_doctor(client, args.device, shmim, args.nimages, [args.mode,], [-args.range/2., args.range/2], search_kind='grid',
                search_dict={'nsteps' : args.nsteps, 'nrepeats' : args.nrepeats},
                metric=get_image_coresum, metric_dict={'radius' : args.core},
-               curr_prop='current_amps', targ_prop='target_amps', baseline=~args.reset)
+               curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset)
 
 def console_comprehensive():
     '''
@@ -847,7 +847,7 @@ def console_comprehensive():
     eye_doctor_comprehensive(client, args.device, shmim, args.nimages, modes=modes, bounds=[-args.range/2., args.range/2], search_kind='grid',
                              search_dict={'nsteps' : args.nsteps, 'nrepeats' : args.nrepeats}, metric=get_image_coresum, metric_dict={'radius' : args.core},
                              ncluster=5, nrepeat=args.nclusterrepeats, nseqrepeat=args.nseqrepeat, randomize=True,
-                             curr_prop='current_amps', targ_prop='target_amps', baseline=~args.reset)
+                             curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset)
 
 def write_new_flat(dm, filename=None, update_symlink=False):
     '''
