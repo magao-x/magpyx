@@ -90,7 +90,8 @@ def zero_dm(client, device,):
         device : str
             Device name
     '''
-    nmodes = len(client.devices[device].properties[prop].elements)
+    client.wait_for_properties([f'{device}.current_amps', f'{device}.target_amps',], timeout=10)
+    nmodes = len(client.devices[device].properties['current_amps'].elements)
     send_modes_and_wait(client, device, {m:0 for m in range(nmodes)})
 
 def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_properties=True, timeout=10):
@@ -557,7 +558,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
     '''
 
     # wait for devices to appear on INDI client
-    client.wait_for_properties([f'{device}.{targ_prop}',])
+    client.wait_for_properties([f'{device}.{targ_prop}', f'{device}.{curr_prop}'])
 
     optimized_amps = []
     metric_vals = []
@@ -567,10 +568,12 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
         # baseline centers the search or sweep around the current value 
         if baseline:
             baseval = get_value(client, device, curr_prop, f'{n:0>2}')
-            curbounds = np.asarray(bounds) - baseval
+            curbounds = np.asarray(bounds) + baseval
         else:
             baseval = 0.
             curbounds = bounds
+
+        logger.info(f'Mode {n}: Scanning coefficients from {curbounds[0]} to {curbounds[1]} microns RMS')
 
         # measure
         meas_init = shmim.grab_many(nimages)
@@ -601,8 +604,9 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
         # metric
         val_final = metric(meas_final, **metric_dict)
 
-        logger.info(f'Mode {n}: Optimized mode coefficient from {baseval:.2} to {optval:.2} microns')
-        logger.info(f'Mode {n}: Optimized metric {metric} from {val_init:.2} to {val_final:.2}')
+        logger.info(f'Mode {n}: Optimized metric {metric} from {val_init:.5} to {val_final:.5}')
+        logger.info(f'Mode {n}: Optimized mode coefficient from {baseval:.5} to {optval:.5} microns')
+        logger.info(f'-----------------------------------------------------------------------------')
 
 def build_sequence(client, device, shmim, nimages, metric=get_image_coresum, metric_dict={}, search_kind='grid', search_dict={}, curr_prop=None, targ_prop=None,
                    modes=range(2,36), ncluster=5, nrepeat=3, nseqrepeat=2, randomize=True, baseline=True, bounds=[-5e-3, 5e-3]):
@@ -739,6 +743,16 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
     Returns: list of tuple arguments that can be passed to eye_doctor function
     '''
 
+    # reject modes that aren't allowed
+    # for now, hardcode to first 36 zernikes
+    allowed_modes = [m for m in modes if m in range(36)]
+    if len(allowed_modes) < len(modes):
+        logger.warning('Not correcting modes > 35.')
+
+    if not baseline:
+        logger.info('Not using the current baseline: resetting all mode coefficients to 0.')
+        zero_dm(client, device)
+
     # build sequence
     args_seq = build_sequence(client, device, shmim, nimages, metric=metric, metric_dict=metric_dict, search_kind=search_kind,
                               search_dict=search_dict, curr_prop=curr_prop, targ_prop=targ_prop, modes=modes, ncluster=ncluster,
@@ -870,15 +884,15 @@ def write_new_flat(dm, filename=None, update_symlink=False):
     if dm.upper() == 'WOOFER':
         outpath = '/opt/MagAOX/calib/dm/alpao_bax150/'
         dm_name = 'ALPAOBAX150'
-        shm_name = 'dm00disp00'
+        shm_name = 'dm00disp'
     elif dm.upper() == 'NCPC':
         outpath = '/opt/MagAOX/calib/dm/alpao_bax260/'
         dm_name = 'ALPAOBAX260'
-        shm_name = 'dm02disp00'
+        shm_name = 'dm02disp'
     elif dm.upper() == 'TWEETER':
         outpath = '/opt/MagAOX/calib/dm/bmc_2k/'
         dm_name = 'BMC2K'
-        shm_name = 'dm01disp00'
+        shm_name = 'dm01disp'
     else:
         logger.warning('Unknown DM provided. Interpreting as a shared memory image name.')
         shm_name = dm
