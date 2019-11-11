@@ -863,7 +863,7 @@ def console_comprehensive():
                              ncluster=5, nrepeat=args.nclusterrepeats, nseqrepeat=args.nseqrepeat, randomize=True,
                              curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset)
 
-def write_new_flat(dm, filename=None, update_symlink=False):
+def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
     '''
     Write out a new flat to FITS after eye doctoring.
 
@@ -909,13 +909,14 @@ def write_new_flat(dm, filename=None, update_symlink=False):
     flat = shmim.grab_latest()
 
     logger.info(f'Writing image at {shm_name} to {outname}.')
-    fits.writeto(outname, flat)
+    fits.writeto(outname, flat, overwrite=overwrite)
 
     if update_symlink:
         sym_path = os.path.join(outpath, 'flat.fits')
         if os.path.islink(sym_path):
             os.remove(sym_path)
         os.symlink(outname, sym_path)
+        logger.info(f'Symlinked image at {outname} to {sym_path}.')
 
 def console_write_new_flat():
     import argparse
@@ -925,8 +926,10 @@ def console_write_new_flat():
                         help='Path of file to write out. Default: /opt/MagAOX/calib/dm/<dm_name>/flats/flat_optimized_<dm name>_<date/time>.fits')
     parser.add_argument('--symlink', action='store_true',
                         help='Symlink flat to /opt/MagAOX/calib/dm/<dm_name>/flats/flat.fits or at the custom path provided with the "--filename" flag.')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Overwrite an existing file? [Default: False]')
     args = parser.parse_args()
-    write_new_flat(args.dm, filename=args.filename, update_symlink=args.symlink)
+    write_new_flat(args.dm, filename=args.filename, update_symlink=args.symlink, overwrite=args.overwrite)
 
 if __name__ == '__main__':
     pass
