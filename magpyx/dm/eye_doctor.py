@@ -81,7 +81,7 @@ def send_value(client, device, prop, elem, value, wait=False, timeout=None):
         client.wait_for_properties([f'{device}.{prop}',], timeout=timeout)
     client[f'{device}.{prop}.{elem}'] = value
         
-def zero_dm(client, device,):
+def zero_dm(client, device):
     '''
     Set all mode amplitudes to 0.
 
@@ -930,6 +930,55 @@ def console_write_new_flat():
                         help='Overwrite an existing file? [Default: False]')
     args = parser.parse_args()
     write_new_flat(args.dm, filename=args.filename, update_symlink=args.symlink, overwrite=args.overwrite)
+
+def console_zero_all_modes():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('dmDevice', type=str, help='DM. One of ["wooferModes", "ncpcModes", "tweeterModes"]')
+    parser.add_argument('--portINDI', type=int, default=7624, help='INDI Port on which [dm]Modes can be found. Default: 7624.')
+    args = parser.parse_args()
+
+    # start a client
+    client = indi.INDIClient('localhost', args.portINDI)
+    client.start()
+
+    # zero the DM
+    zero_dm(client, args.dmDevice)
+
+
+def console_update_flat():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('dm', type=str, help='DM. One of ["woofer", "ncpc", "tweeter"]')
+    parser.add_argument('--portINDI', type=int, default=7624, help='INDI Port on which [dm]Modes can be found. Default: 7624.')
+    args = parser.parse_args()
+
+    dm = args.dm
+    port = args.portINDI
+
+    # write out new flat and symlink
+    write_new_flat(dm, update_symlink=True)
+
+    # zero modes
+    client = indi.INDIClient('localhost', portINDI)
+    client.start()
+    if dm.upper() == 'WOOFER':
+        device = 'wooferModes'
+        dmdevice = 'dmwoofer'
+    elif dm.upper() == 'NCPC':
+        device = 'ncpcModes'
+        dmdevice = 'dmncpc'
+    elif dm.upper() == 'TWEETER':
+        device = 'tweeterModes'
+        dmdevice = 'dmtweeter'
+    else:
+        raise ValueErorr('Unknown DM provided.')
+    zero_dm(client, device)
+
+    # toggle reload flat
+    client.wait_for_properties([f'{device}.flat',], timeout=10)
+    client[f'{dmdevice}.flat.target'] = 'flat.fits'
+
 
 if __name__ == '__main__':
     pass

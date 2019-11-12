@@ -45,6 +45,8 @@ setup(
                             'dm_eye_doctor_comprehensive=magpyx.dm.eye_doctor:console_comprehensive',
                             'dm_eye_doctor_mode=magpyx.dm.eye_doctor:console_modal',
                             'dm_eye_doctor_to_fits=magpyx.dm.eye_doctor:console_write_new_flat',
+                            'dm_zero_all_modes=magpyx.dm.eye_doctor:console_zero_all_modes',
+                            'dm_eye_doctor_update_flat=magpyx.dm.eye_doctor:console_update_flat',
                             'dm_send_poke=magpyx.utils:console_send_dm_poke',
                             'send_fits_to_shmim=magpyx.utils:console_send_fits_to_shmim',
                             'send_shmim_to_fits=magpyx.utils:console_send_shmim_to_fits',
