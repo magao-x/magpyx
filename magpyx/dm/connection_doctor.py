@@ -14,6 +14,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('connection_doctor')
 
+default_mapfile = '/opt/MagAOX/calib/dm/bmc_2k/actuator_mapping_BMC2K_2019_09_27.csv'
+
 def colorbar(mappable, *args, **kwargs):
     ax = mappable.axes
     fig = ax.figure
@@ -136,8 +138,9 @@ def get_rms_map(zrespM):
 
     return np.sqrt(np.mean(data**2, axis=(1,2))).reshape((act_shape, act_shape))
 
-def read_actuator_connection_mapping(filename='/opt/MagAOX/calib/dm/bmc_2k/actuator_mapping_BMC2K_2019_09_27.csv',
+def read_actuator_connection_mapping(filename=default_mapfile,
                                      return_dump=False):
+
     actuator_dump = np.genfromtxt(filename, delimiter=',',skip_header=1,dtype=None, encoding=None,
                                  names=['actuator', 'row', 'col', 'bondpad chip', 'bondpad awb',
                                         'awb side', 'bond finger', 'megarray', 'samtec'])
@@ -175,7 +178,7 @@ def format_mpl_connection_2K(im, conn_types):
         return f', connection={conn_types[val]}'
     im.format_cursor_data = format_cursor_data
 
-def display_actuator_connections(filename=None):
+def display_actuator_connections(filename=default_mapfile):
     act_mapping = read_actuator_connection_mapping(filename=filename)
     numeric_mapping = np.zeros(2040)
     conn_types = np.unique(act_mapping)
@@ -196,7 +199,7 @@ def display_actuator_connections(filename=None):
 
     return fig, ax
 
-def display_interconnect_connections(connector, actuator_mapfile=None, ax=None, flagged_acts=None):
+def display_interconnect_connections(connector, actuator_mapfile=default_mapfile, ax=None, flagged_acts=None):
 
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(4,3))
@@ -309,7 +312,7 @@ def check_actuator_functionality_ALPAO(zrespM, zrespM_ref=None, sigma=2, display
 
     return flagged_acts
 
-def check_actuator_functionality_2K(zrespM, zrespM_ref=None, actuator_mapfile=None, sigma=2, display=False, display_samtecs=False):
+def check_actuator_functionality_2K(zrespM, zrespM_ref=None, actuator_mapfile=default_mapfile, sigma=2, display=False, display_samtecs=False):
     '''
     Flag suspicious actuators.
 
