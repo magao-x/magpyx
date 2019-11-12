@@ -755,7 +755,7 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
 
     # build sequence
     args_seq = build_sequence(client, device, shmim, nimages, metric=metric, metric_dict=metric_dict, search_kind=search_kind,
-                              search_dict=search_dict, curr_prop=curr_prop, targ_prop=targ_prop, modes=modes, ncluster=ncluster,
+                              search_dict=search_dict, curr_prop=curr_prop, targ_prop=targ_prop, modes=allowed_modes, ncluster=ncluster,
                               nrepeat=nrepeat, nseqrepeat=nseqrepeat, randomize=randomize, baseline=baseline, bounds=bounds)
 
     # if focus is requested, do it first (it gets repeated later but oh well)
