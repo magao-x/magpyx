@@ -960,7 +960,7 @@ def console_update_flat():
     write_new_flat(dm, update_symlink=True)
 
     # zero modes
-    client = indi.INDIClient('localhost', portINDI)
+    client = indi.INDIClient('localhost', port)
     client.start()
     if dm.upper() == 'WOOFER':
         device = 'wooferModes'
@@ -972,12 +972,15 @@ def console_update_flat():
         device = 'tweeterModes'
         dmdevice = 'dmtweeter'
     else:
-        raise ValueErorr('Unknown DM provided.')
+        raise ValueErorr('Unknown DM provided. Must be one of "woofer", "tweeter", or "ncpc".')
+
+    logger.info(f"Cleared all modes on {device}.")
     zero_dm(client, device)
 
     # toggle reload flat
-    client.wait_for_properties([f'{device}.flat',], timeout=10)
+    client.wait_for_properties([f'{dmdevice}.flat',], timeout=10)
     client[f'{dmdevice}.flat.target'] = 'flat.fits'
+    logger.info(f"Reloaded flat on {dmdevice}.")
 
 
 if __name__ == '__main__':
