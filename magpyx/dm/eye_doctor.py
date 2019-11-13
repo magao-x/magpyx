@@ -758,7 +758,7 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
                               search_dict=search_dict, curr_prop=curr_prop, targ_prop=targ_prop, modes=allowed_modes, ncluster=ncluster,
                               nrepeat=nrepeat, nseqrepeat=nseqrepeat, randomize=randomize, baseline=baseline, bounds=bounds)
 
-    # if focus is requested, do it first (it gets repeated later but oh well)
+    # if focus is requested, do it first (it may get repeated later but oh well)
     if focus_first:
         logger.info('Optimizing focus first!')
         eye_doctor(client, device, shmim, nimages, [2,], bounds, search_kind=search_kind, search_dict=search_dict, metric=metric,
@@ -845,6 +845,8 @@ def console_comprehensive():
     parser.add_argument('--nseqrepeat', type=int, default=1, help='Number of times to repeat the optimization of all modes [Default: 1]')
     parser.add_argument('--nimages', type=int, default=1, help='Number of images to collect from shmim [Default: 1]')
     parser.add_argument('--reset',  action='store_true', help='Ignore the current value of the mode and optimize about 0')
+    parser.add_argument('--ignorefocus', action='store_true',
+        help='By default, if more than one mode is being optimized, the eye doctor starts with focus. Use this option to turn this off.')
 
     args = parser.parse_args()
 
@@ -857,11 +859,16 @@ def console_comprehensive():
 
     modes = parse_modes(args.modes)
 
+    if len(modes) == 1 or args.ignorefocus:
+        focus_first = False
+    else:
+        focus_first = True
+
     # run eye doctor
     eye_doctor_comprehensive(client, args.device, shmim, args.nimages, modes=modes, bounds=[-args.range/2., args.range/2], search_kind='grid',
                              search_dict={'nsteps' : args.nsteps, 'nrepeats' : args.nrepeats}, metric=get_image_coresum, metric_dict={'radius' : args.core},
                              ncluster=5, nrepeat=args.nclusterrepeats, nseqrepeat=args.nseqrepeat, randomize=True,
-                             curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset)
+                             curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset, focus_first=focus_first)
 
 def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
     '''
