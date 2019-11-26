@@ -140,8 +140,7 @@ def command_stage(client, indi_triplet, value):
     indi_send_and_wait(client, command_dict, wait_for_properties=True, timeout = 30)
     
 #ACTUAL FOCUS SCRIPT
-positions = np.linspace(0,75,50)
-def Focus_Script(positions, camera='camsci1', stage='stagesci1', indi_port = 7624):
+def auto_focus_realtime(positions, camera='camsci1', stage='stagesci1', indi_port = 7624):
     
     # start INDI client
     # acquire data
@@ -155,8 +154,28 @@ def Focus_Script(positions, camera='camsci1', stage='stagesci1', indi_port = 762
     focus_pos = analysis(positions, data_cube, display=True)
     command_stage(client, f'{stage}.position.target', focus_pos)    
 
-#PRACTICE
-data_cube = fits.getdata('./focuscube_camsci1_iband_2019-09-20.fits')
-positions = np.linspace(0,75,50)
-data_cube = fits.getdata('./focuscube_camsci1_iband_2019-09-20.fits')
-analysis(positions, data_cube, display=True)
+#Console Entry Point
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+
+    #parser.add_argument('shmim_name', type=str, help='Name of shared memory name')
+    parser.add_argument('-f', '--filepath', type=str, help='File Path')
+    parser.add_argument('-c', '--camera', type=str, help='Camera Shared Memory Image')
+    args = parser.parse_args()
+    if args.filepath is not None and args.camera is not None:
+        print('Cannot provide both a file path and a camera')
+        sys.exit(1)
+    elif args.filepath is None and args.camera is None:
+        print('Camera or file path must be provided')
+        sys.exit(1)
+    elif args.filepath is not None:
+        print(args)
+        data_cube = fits.getdata(args.filepath)
+        positions = np.linspace(0,75,50)
+        analysis(positions, data_cube, display=True)
+    elif args.camera is not None:
+        print(args)
+        positions = np.linspace(0,75,50)
+        stage_name = args.camera.replace('cam','stage')
+        auto_focus_realtime(positions, camera=args.camera, stage=stage_name, indi_port = 7624)
