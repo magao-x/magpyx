@@ -744,10 +744,12 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
     '''
 
     # reject modes that aren't allowed
-    # for now, hardcode to first 36 zernikes
-    allowed_modes = [m for m in modes if m in range(36)]
+    client.wait_for_properties([f'{device}.current_amps',])
+    nmodes = len(client.devices[device].properties['current_amps'].elements)
+    logger.info(f'Number of modes avaiable: {nmodes}')
+    allowed_modes = [m for m in modes if m in range(nmodes)]
     if len(allowed_modes) < len(modes):
-        logger.warning('Not correcting modes > 35.')
+        logger.warning(f'Not correcting modes > {nmodes}.')
 
     if not baseline:
         logger.info('Not using the current baseline: resetting all mode coefficients to 0.')
