@@ -114,11 +114,11 @@ def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_prope
     status_dict = {}
     for mode, targ in mode_targ_dict.items():
         status_dict.update({
-            f'{device}.current_amps.{mode:0>2}': {
+            f'{device}.current_amps.{mode:0>4}': {
                 'value': targ,
                 'test': lambda current, value, tolerance=tol: abs(current - value) < tolerance,
             #},
-            #f'{device}.target_amps.{mode:0>2}': {
+            #f'{device}.target_amps.{mode:0>4}': {
             #    'value': targ,
             }})
     return client.wait_for_state(status_dict, wait_for_properties=wait_for_properties, timeout=timeout)
@@ -424,7 +424,7 @@ def move_measure_metric(val, client, device, shmim, nmode, nimages, metric, metr
     '''
 
     # move
-    send_modes_and_wait(client, device, {f'{nmode:0>2}' : val})
+    send_modes_and_wait(client, device, {f'{nmode:0>4}' : val})
     #sleep(0.1)
     # measure
     images = shmim.grab_many(nimages)
@@ -476,7 +476,7 @@ def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, m
     for i in range( nrepeats):
         for j, s in enumerate(steps):
             # move
-            send_modes_and_wait(client, device, {f'{n:0>2}' : s})
+            send_modes_and_wait(client, device, {f'{n:0>4}' : s})
             #sleep(0.1)
             #measure
             images = shmim.grab_many(nimages)
@@ -567,7 +567,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
 
         # baseline centers the search or sweep around the current value 
         if baseline:
-            baseval = get_value(client, device, curr_prop, f'{n:0>2}')
+            baseval = get_value(client, device, curr_prop, f'{n:0>4}')
             curbounds = np.asarray(bounds) + baseval
         else:
             baseval = 0.
@@ -596,7 +596,7 @@ def eye_doctor(client, device, shmim, nimages, modes, bounds, search_kind='grid'
             raise ValueError('search_kind must be either "brent" or "grid".')
 
         # send to optimized value
-        send_modes_and_wait(client, device, {f'{n:0>2}' : optval})
+        send_modes_and_wait(client, device, {f'{n:0>4}' : optval})
         #sleep(0.1)
 
         # measure
