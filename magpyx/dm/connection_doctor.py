@@ -406,6 +406,30 @@ def check_actuator_functionality_2K(zrespM, zrespM_ref=None, actuator_mapfile=de
     
     return flagged_acts, connection_mapping
 
+
+def plot_latency(dm, filepath=None):
+    '''
+    Plot cacao timing stats.
+
+    If filepath is given, the dm argument is ignored.
+
+    Parameters:
+        dm : str
+            Name of the dm: tweeter or woofer
+        filepath : str
+            Path to hardwlatency.txt if dm is not given.
+    '''
+
+    if filepath is None:
+        filepath = f'/opt/MagAOX/cacao/{dm}/timingstats/hardwlatency.txt'
+
+    lat = np.loadtxt(filepath)
+    fig, ax = plt.subplots(1,1, figsize=(6,4.5))
+    ax.scatter(lat[:,1], lat[:,2], s=1)
+    ax.set_xlabel('Time (ms)')
+    ax.set_ylabel('Response')
+    fig.tight_layout()
+
 def main():
     # parse command line arguments
     import argparse
