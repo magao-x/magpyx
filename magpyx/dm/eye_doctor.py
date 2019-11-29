@@ -987,6 +987,7 @@ def console_update_flat():
     # toggle reload flat
     status_dict = {f'{dmdevice}.flat.target': { 'value': 'flat.fits'}}
     client.wait_for_state(status_dict, wait_for_properties=True, timeout=10)
+    sleep(3) # I don't know why I need this.
     logger.info(f"Reloaded flat on {dmdevice}.")
 
 if __name__ == '__main__':
