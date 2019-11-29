@@ -1,5 +1,6 @@
 #Imports
 from astropy.io import fits
+from datetime import datetime
 import glob
 from magpyx.utils import ImageStream,indi_send_and_wait
 import matplotlib.pyplot as plt
@@ -81,7 +82,7 @@ def fit(img, display=False):
             ax.plot(xplot, gaussian_func(xplot, *popt),color= 'green',linestyle= 'dashed', label='Gaussian Fit')
         plt.xlabel('Radius (pixels)')
         plt.ylabel('Counts')
-        plt.title(f'Gaussian Fit and Radial Profile at Position') #{positions[i]}')*****
+        plt.title(f'Gaussian Fit and Radial Profile')
         ax.legend()
                 
         annot_max(xplot,gaussian_func, popt)
@@ -119,7 +120,9 @@ def analysis(all_positions, images, threshold=0.5, display=False):
         plt.xlabel('Positions (mm)')
         plt.ylabel('Peak Value of Frame')
         plt.title('Peaks')
-        plt.show()
+        #plt.show()
+        dateTimeObj = datetime.now()
+        plt.savefig(f'/tmp/Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}.png')
         print(f'That maximum peak is {np.max(p(positions2))}')
         print(f'The camera should move to position {focus_pos}')
     return focus_pos
@@ -132,12 +135,16 @@ def acquire_data(client, positions, camera='camsci1', stage='stagesci1'):
     for i, p in enumerate(positions):
         print(p)
         command_stage(client, f'{stage}.position.target', p)
+        #store latest image in a variable
+        #background subtraction
+        #append to list
         images.append(camstream.grab_latest())
+        #time.sleep(1)
     return images
 
 def command_stage(client, indi_triplet, value):
     command_dict = {indi_triplet : value}
-    indi_send_and_wait(client, command_dict, wait_for_properties=True, timeout = 30)
+    indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 30)
     
 #ACTUAL FOCUS SCRIPT
 def auto_focus_realtime(positions, camera='camsci1', stage='stagesci1', indi_port = 7624):
