@@ -65,7 +65,7 @@ def projected_basis(nterms, angle, fill_fraction, actuator_mask):
         zbasis[:, y, x] = zbasis[:, yneighbor, xneighbor]
 
     # toss piston
-    return zbasis[1:]
+    return zbasis[1:], footprint
 
 def find_nearest(yx, footprint, num=1):
     '''
@@ -106,7 +106,8 @@ def main():
     parser.add_argument('fill_fraction', type=float, help='Fraction of the DM filled in the horizontal direction')
     parser.add_argument('actuator_mask', type=str, help='Path to FITS file with binary DM actuator mask (probably under /opt/MagAOX/calib/dm/[dm_name]/')
     parser.add_argument('outname', type=str, help='File to write out')
-    parser.add_argument('--overwrite', type=bool, default=False, help='Overwrite existing FITS file? Default=False')
+    parser.add_argument('--overwrite', action='store_true', help='Overwrite existing FITS file? Default=False')
+    parser.add_argument('--projected_mask', type=str, help='Path to FITS file to write out a optional projected mask to.')
 
     args = parser.parse_args()
 
@@ -116,9 +117,13 @@ def main():
     actuator_mask = args.actuator_mask
     outname = args.outname
     overwrite = args.overwrite
+    outmask = args.projected_mask
 
-    zbasis = projected_basis(nterms, angle, fill_fraction, actuator_mask)
+    zbasis, footprint = projected_basis(nterms, angle, fill_fraction, actuator_mask)
     write_fits(zbasis, outname, angle, fill_fraction, overwrite=overwrite)
+
+    if outmask != '':
+        write_fits(footprint, outmask, angle, fill_fraction, overwrite=overwrite)
 
 
 if __name__ == '__main__':
