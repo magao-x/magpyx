@@ -753,6 +753,8 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
         logger.info('Not using the current baseline: resetting all mode coefficients to 0.')
         zero_dm(client, device)
 
+    logger.info(f'Optimizing modes: {allowed_modes}')
+
     # build sequence
     args_seq = build_sequence(client, device, shmim, nimages, metric=metric, metric_dict=metric_dict, search_kind=search_kind,
                               search_dict=search_dict, curr_prop=curr_prop, targ_prop=targ_prop, modes=allowed_modes, ncluster=ncluster,
