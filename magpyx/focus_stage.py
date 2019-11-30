@@ -149,9 +149,12 @@ def command_stage(client, indi_triplet, value):
     indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 30)
     
 #ACTUAL FOCUS SCRIPT
-def auto_focus_realtime(positions, camera='camsci1', stage='stagesci1', indi_port = 7624):
+def auto_focus_realtime(positions, camera='camsci1', stage='stagesci1', exposure=None, indi_port = 7624):
     client = indi.INDIClient('localhost', indi_port)
     client.start()  #start INDI client
+    if exposure is not None:
+        command_dict = {f'{camera}.exptime.target' : exposure}
+        indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 30)
     data_cube = acquire_data(client, positions, camera=camera, stage=stage) #capture/bg subtract images
     focus_pos = analysis(positions, data_cube, display=True) #find best focus
     print('The camera is moving to best focus')
@@ -169,6 +172,7 @@ def main():
     parser.add_argument('--start',type=float, default = 0, help='Starting Stage Position')
     parser.add_argument('--stop',type=float, default = 75, help='Ending Stage Position')
     parser.add_argument('--steps',type=int, default = 50, help='Number of Steps')
+    parser.add_argument('-exp','--exposure',type=float, default = None, help='Exposure Time')
     args = parser.parse_args()
     if args.filepath is not None and args.camera is not None:
         print('Cannot provide both a file path and a camera')
@@ -185,4 +189,4 @@ def main():
         print(args)
         positions = np.linspace(args.start,args.stop,args.steps)
         stage_name = args.camera.replace('cam','stage')
-        auto_focus_realtime(positions, camera=args.camera, stage=stage_name, indi_port = 7624)
+        auto_focus_realtime(positions, camera=args.camera, stage=stage_name, exposure=args.exposure, indi_port = 7624)
