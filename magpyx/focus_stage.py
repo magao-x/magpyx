@@ -1,6 +1,6 @@
 #Imports
 from astropy.io import fits
-from datetime import datetime
+from datetime import datetime, timezone
 import glob
 from magpyx.utils import ImageStream,indi_send_and_wait
 import matplotlib.pyplot as plt
@@ -44,9 +44,7 @@ def annot_max(xplot,gaussian_func, popt, ax=None):
 #Annotates full width half max
 def annot_fwhm(xplot,gaussian_func, popt, ax=None):
     xfwhm = xplot[gaussian_func(xplot, *popt) < gaussian_func(xplot, *popt).max() / 2].min()
-    #print(xfwhm)
     yfwhm = gaussian_func(xplot, *popt).max()/2
-    #print(yfwhm)
     text= "x={:.3f}, y={:.3f}".format(xfwhm, yfwhm)
     if not ax:
         ax=plt.gca()
@@ -105,7 +103,6 @@ def analysis(all_positions, images, threshold=0.5, display=False):
     positions = all_positions[goodindices]
     
     z = np.polyfit(positions,peaks,2)
-    print(z)
     p = np.poly1d(z)
     min_pos = np.min(positions)
     max_pos = np.max(positions)
@@ -121,8 +118,8 @@ def analysis(all_positions, images, threshold=0.5, display=False):
         plt.ylabel('Peak Value of Frame')
         plt.title('Peaks')
         #plt.show()
-        dateTimeObj = datetime.now()
-        plt.savefig(f'/tmp/Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}.png')
+        dateTimeObj = datetime.now(timezone.utc)
+        plt.savefig(f'/tmp/Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.png')
         print(f'That maximum peak is {np.max(p(positions2))}')
         print(f'The camera should move to position {focus_pos}')
     return focus_pos
@@ -130,16 +127,21 @@ def analysis(all_positions, images, threshold=0.5, display=False):
 #Main Loop through camera positions
 def acquire_data(client, positions, camera='camsci1', stage='stagesci1'):
     camstream = ImageStream(camera)
-    #positions = np.linspace(0,75,50) #move through stage positions by 10 mm
     images = []
     for i, p in enumerate(positions):
-        print(p)
+        print(f'Going to {p} mm on {stage}')
         command_stage(client, f'{stage}.position.target', p)
-        #store latest image in a variable
-        #background subtraction
-        #append to list
-        images.append(camstream.grab_latest())
-        #time.sleep(1)
+        print('Grabbing images and performing background subtraction')
+        raw_img = camstream.grab_latest()
+        height = raw_img.shape[0]
+        width = raw_img.shape[1]
+        slice1 = raw_img[0:3,0:3] #top left
+        slice2 = raw_img[0:3,width-3:width] #top right
+        slice3 = raw_img[height-3:height,0:3] #bottom left
+        slice4 = raw_img[height-3:height,width-3:width] #bottom right
+        median = np.median([slice1,slice2,slice3,slice4])
+        img = raw_img-median
+        images.append(img)
     return images
 
 def command_stage(client, indi_triplet, value):
@@ -148,18 +150,13 @@ def command_stage(client, indi_triplet, value):
     
 #ACTUAL FOCUS SCRIPT
 def auto_focus_realtime(positions, camera='camsci1', stage='stagesci1', indi_port = 7624):
-    
-    # start INDI client
-    # acquire data
-    # do the analysis
-    # move to best focus
-    # stop INDI client
-    
     client = indi.INDIClient('localhost', indi_port)
-    client.start()  
-    data_cube = acquire_data(client, positions, camera=camera, stage=stage)
-    focus_pos = analysis(positions, data_cube, display=True)
-    command_stage(client, f'{stage}.position.target', focus_pos)    
+    client.start()  #start INDI client
+    data_cube = acquire_data(client, positions, camera=camera, stage=stage) #capture/bg subtract images
+    focus_pos = analysis(positions, data_cube, display=True) #find best focus
+    print('The camera is moving to best focus')
+    command_stage(client, f'{stage}.position.target', focus_pos) 
+    print('The camera is at best focus')
 
 #Console Entry Point
 def main():
@@ -169,6 +166,9 @@ def main():
     #parser.add_argument('shmim_name', type=str, help='Name of shared memory name')
     parser.add_argument('-f', '--filepath', type=str, help='File Path')
     parser.add_argument('-c', '--camera', type=str, help='Camera Shared Memory Image')
+    parser.add_argument('--start',type=float, default = 0, help='Starting Stage Position')
+    parser.add_argument('--stop',type=float, default = 75, help='Ending Stage Position')
+    parser.add_argument('--steps',type=int, default = 50, help='Number of Steps')
     args = parser.parse_args()
     if args.filepath is not None and args.camera is not None:
         print('Cannot provide both a file path and a camera')
@@ -179,10 +179,10 @@ def main():
     elif args.filepath is not None:
         print(args)
         data_cube = fits.getdata(args.filepath)
-        positions = np.linspace(0,75,50)
+        positions = np.linspace(args.start,args.stop,args.steps)
         analysis(positions, data_cube, display=True)
     elif args.camera is not None:
         print(args)
-        positions = np.linspace(0,75,50)
+        positions = np.linspace(args.start,args.stop,args.steps)
         stage_name = args.camera.replace('cam','stage')
         auto_focus_realtime(positions, camera=args.camera, stage=stage_name, indi_port = 7624)
