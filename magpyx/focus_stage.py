@@ -126,9 +126,10 @@ def analysis(all_positions, images, threshold=0.5, savefigure=False, display=Fal
     return focus_pos
 
 #Main Loop through camera positions
-def acquire_data(client, positions, camera='camsci1', stage='stagesci1'):
+def acquire_data(client, positions, camera='camsci1', stage='stagesci1', outpath=None):
     camstream = ImageStream(camera)
     images = []
+    raw_images = []
     for i, p in enumerate(positions):
         print(f'Going to {p} mm on {stage}')
         command_stage(client, f'{stage}.position.target', p)
@@ -143,6 +144,11 @@ def acquire_data(client, positions, camera='camsci1', stage='stagesci1'):
         median = np.median([slice1,slice2,slice3,slice4])
         img = raw_img-median
         images.append(img)
+        raw_images.append(raw_img)
+    if outpath is not None:
+        dateTimeObj = datetime.now(timezone.utc)
+        full_path = os.path.join(outpath, f'focuscube_{camera}_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.fits')
+        fits.writeto(full_path, np.array(raw_images))
     return images
 
 def command_stage(client, indi_triplet, value):
@@ -150,7 +156,7 @@ def command_stage(client, indi_triplet, value):
     indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 30)
     
 #ACTUAL FOCUS SCRIPT
-def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None, steps=50, exposure=None, savefigure=False, indi_port = 7624):
+def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None, steps=50, exposure=None, savefigure=False, outpath=None, indi_port = 7624):
     client = indi.INDIClient('localhost', indi_port)
     client.start()  #start INDI client
     if exposure is not None:
@@ -160,7 +166,7 @@ def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None,
         client.wait_for_properties([f'{stage}.position'])
         stop = client.devices[stage].properties['position'].elements['target'].max #if no stop arg given then it will grab max stage value from INDI
     positions = np.linspace(start,stop,steps)
-    data_cube = acquire_data(client, positions, camera=camera, stage=stage) #capture/bg subtract images
+    data_cube = acquire_data(client, positions, camera=camera, stage=stage, outpath=outpath) #capture/bg subtract images
     focus_pos = analysis(positions, data_cube, savefigure=savefigure, display=True) #find best focus
     print('The camera is moving to best focus')
     command_stage(client, f'{stage}.position.target', focus_pos)
@@ -179,6 +185,7 @@ def main():
     parser.add_argument('--steps',type=int, default = 50, help='Number of Steps')
     parser.add_argument('-exp','--exposure',type=float, default = None, help='Exposure Time')
     parser.add_argument('-save','--savefigure', action='store_true', help='Saving Peaks Plot')
+    parser.add_argument('-o','--outpath',type=str, default = None, help='File Outpath')
     args = parser.parse_args()
     if args.filepath is not None and args.camera is not None:
         print('Cannot provide both a file path and a camera')
@@ -196,4 +203,4 @@ def main():
     elif args.camera is not None:
         print(args)
         stage_name = args.camera.replace('cam','stage')
-        auto_focus_realtime(camera=args.camera, stage=stage_name, start=args.start, stop=args.stop, steps=args.steps, exposure=args.exposure, savefigure=args.savefigure, indi_port = 7624)
+        auto_focus_realtime(camera=args.camera, stage=stage_name, start=args.start, stop=args.stop, steps=args.steps, exposure=args.exposure, savefigure=args.savefigure, outpath=args.outpath, indi_port = 7624)
