@@ -153,10 +153,11 @@ def acquire_data(client, positions, camera='camsci1', stage='stagesci1', outpath
 
 def command_stage(client, indi_triplet, value):
     command_dict = {indi_triplet : value}
-    indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 30)
+    indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 60)
     
 #ACTUAL FOCUS SCRIPT
-def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None, steps=50, exposure=None, savefigure=False, outpath=None, number=1, indi_port = 7624):
+def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None, steps=50, exposure=None,
+                        savefigure=False, outpath=None, number=1, indi_port = 7624):
     client = indi.INDIClient('localhost', indi_port)
     client.start()  #start INDI client
     if exposure is not None:
@@ -206,4 +207,4 @@ def main():
         stage_name = args.camera.replace('cam','stage')
         auto_focus_realtime(camera=args.camera, stage=stage_name, start=args.start, stop=args.stop,
                             steps=args.steps, exposure=args.exposure, savefigure=args.savefigure,
-                            outpath=args.outpath, number=args.number indi_port = 7624)
+                            outpath=args.outpath, number=args.number, indi_port = 7624)
