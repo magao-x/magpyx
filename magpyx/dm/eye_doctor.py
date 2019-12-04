@@ -744,7 +744,7 @@ def eye_doctor_comprehensive(client, device, shmim, nimages, metric=get_image_co
     '''
 
     # reject modes that aren't allowed
-    client.wait_for_properties([f'{device}.current_amps',])
+    client.wait_for_properties([f'{device}.current_amps', f'{device}.target_amps',])
     nmodes = len(client.devices[device].properties['current_amps'].elements)
     logger.info(f'Number of modes avaiable: {nmodes}')
     allowed_modes = [m for m in modes if m in range(nmodes)]
