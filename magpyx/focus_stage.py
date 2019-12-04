@@ -120,7 +120,9 @@ def analysis(all_positions, images, threshold=0.5, savefigure=False, display=Fal
         plt.title(f'Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC')
         plt.show()
         if savefigure==True:
-            plt.savefig(f'/tmp/Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.png')
+            peak_path = f'/tmp/Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.png'
+            plt.savefig(peak_path)
+            print(peak_path)
         print(f'That maximum peak is {np.max(p(positions2))}')
         print(f'The camera should move to position {focus_pos}')
     return focus_pos
@@ -150,6 +152,7 @@ def acquire_data(client, positions, camera='camsci1', stage='stagesci1', outpath
         dateTimeObj = datetime.now(timezone.utc)
         full_path = os.path.join(outpath, f'focuscube_{camera}_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.fits')
         fits.writeto(full_path, np.array(raw_images))
+        print(full_path)
     return images
 
 def command_stage(client, indi_triplet, value):
