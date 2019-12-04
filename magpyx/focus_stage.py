@@ -164,7 +164,7 @@ def command_stage(client, indi_triplet, value):
     indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 60)
     
 #ACTUAL FOCUS SCRIPT
-def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None, steps=50, exposure=None,
+def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None, steps=50, exposure=None, threshold=0.5,
                         savefigure=False, outpath=None, number=1, sequence=1, indi_port = 7624):
     client = indi.INDIClient('localhost', indi_port)
     client.start()  #start INDI client
@@ -177,7 +177,7 @@ def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None,
     positions = np.linspace(start,stop,steps)
     data_cube = acquire_data(client, positions, camera=camera, stage=stage, outpath=outpath, number=number, sequence=sequence) #capture/bg subtract images
     all_positions = np.tile(positions,sequence)
-    focus_pos = analysis(all_positions, data_cube, camera=camera, savefigure=savefigure, display=True) #find best focus
+    focus_pos = analysis(all_positions, data_cube, threshold=threshold, camera=camera, savefigure=savefigure, display=True) #find best focus
     print('The camera is moving to best focus')
     command_stage(client, f'{stage}.position.target', focus_pos)
     print('The camera is at best focus')
@@ -194,6 +194,7 @@ def main():
     parser.add_argument('--stop',type=float, default = None, help='Ending Stage Position')
     parser.add_argument('--steps',type=int, default = 50, help='Number of Steps')
     parser.add_argument('-exp','--exposure',type=float, default = None, help='Exposure Time')
+    parser.add_argument('-t','--threshold',type=float, default = 0.5, help='Threshold of Peak Values')
     parser.add_argument('-save','--savefigure', action='store_true', help='Saving Peaks Plot')
     parser.add_argument('-o','--outpath',type=str, default = None, help='File Outpath')
     parser.add_argument('-n','--number',type=int, default = 1, help='Number of Images')
@@ -216,5 +217,6 @@ def main():
         print(args)
         stage_name = args.camera.replace('cam','stage')
         auto_focus_realtime(camera=args.camera, stage=stage_name, start=args.start, stop=args.stop,
-                            steps=args.steps, exposure=args.exposure, savefigure=args.savefigure,
-                            outpath=args.outpath, number=args.number, sequence=args.sequence, indi_port = 7624)
+                            steps=args.steps, exposure=args.exposure, threshold=args.threshold,
+                            savefigure=args.savefigure, outpath=args.outpath, number=args.number,
+                            sequence=args.sequence, indi_port = 7624)
