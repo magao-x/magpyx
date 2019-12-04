@@ -91,7 +91,7 @@ def fit(img, display=False):
     return peak
 
 #Analysis of Peaks
-def analysis(all_positions, images, threshold=0.5, savefigure=False, display=False):
+def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False, display=False):
     all_peaks = []
     for i, img in enumerate(images):
         peak = fit(img)
@@ -117,10 +117,14 @@ def analysis(all_positions, images, threshold=0.5, savefigure=False, display=Fal
         plt.xlabel('Positions (mm)')
         plt.ylabel('Peak Value of Frame')
         dateTimeObj = datetime.now(timezone.utc)
-        plt.title(f'Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC')
+        if camera is not None:
+            title = f'Peaks_{camera}_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC'
+        else:
+            title = f'Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC'
+        plt.title(title)
         plt.show()
         if savefigure==True:
-            peak_path = f'/tmp/Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.png'
+            peak_path = f'/tmp/{title}.png'
             plt.savefig(peak_path)
             print(peak_path)
         print(f'That maximum peak is {np.max(p(positions2))}')
@@ -137,7 +141,7 @@ def acquire_data(client, positions, camera='camsci1', stage='stagesci1', outpath
             print(f'Going to {p} mm on {stage}')
             command_stage(client, f'{stage}.position.target', p)
             print('Grabbing images and performing background subtraction')
-            raw_img = np.mean(camstream.grab_many(number),axis=0)
+            raw_img = np.median(camstream.grab_many(number),axis=0)
             height = raw_img.shape[0]
             width = raw_img.shape[1]
             slice1 = raw_img[0:3,0:3] #top left
@@ -173,7 +177,7 @@ def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None,
     positions = np.linspace(start,stop,steps)
     data_cube = acquire_data(client, positions, camera=camera, stage=stage, outpath=outpath, number=number, sequence=sequence) #capture/bg subtract images
     all_positions = np.tile(positions,sequence)
-    focus_pos = analysis(all_positions, data_cube, savefigure=savefigure, display=True) #find best focus
+    focus_pos = analysis(all_positions, data_cube, camera=camera, savefigure=savefigure, display=True) #find best focus
     print('The camera is moving to best focus')
     command_stage(client, f'{stage}.position.target', focus_pos)
     print('The camera is at best focus')
