@@ -212,7 +212,7 @@ def main():
         if args.stop is None:
             stop = 75
         positions = np.linspace(args.start,stop,args.steps)
-        analysis(positions, data_cube, savefigure=args.savefigure, display=True)
+        analysis(positions, data_cube, threshold=args.threshold, savefigure=args.savefigure, display=True)
     elif args.camera is not None:
         print(args)
         stage_name = args.camera.replace('cam','stage')
