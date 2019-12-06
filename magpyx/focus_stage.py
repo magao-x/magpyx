@@ -128,7 +128,7 @@ def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False
             peak_path = f'/tmp/{title}.png'
             plt.savefig(peak_path)
             print(peak_path)
-        print(f'That maximum peak is {np.max(p(positions2))} counts')
+        print(f'That maximum peak is {np.around(np.max(p(positions2)), decimals=2)} counts')
         print(f'The camera should move to position {np.around(focus_pos, decimals=4)} mm')
     return focus_pos
 
@@ -182,14 +182,14 @@ def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None,
     print('The camera is moving to best focus')
     command_stage(client, f'{stage}.position.target', focus_pos)
     print('The camera is at best focus')
-    #Take image of focus position
-    camstream = ImageStream(camera)
-    focus_img = camstream.grab_latest()
-    dateTimeObj = datetime.now(timezone.utc)
-    full_path = os.path.join(outpath, f'focusimg_{camera}_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.fits')
-    fits.writeto(full_path, focus_img)
-    print(full_path)
-    camstream.close()
+    if outpath is not None:
+        camstream = ImageStream(camera)
+        focus_img = camstream.grab_latest()
+        dateTimeObj = datetime.now(timezone.utc)
+        full_path = os.path.join(outpath, f'focusimg_{camera}_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC.fits')
+        fits.writeto(full_path, focus_img)
+        print(full_path)
+        camstream.close()
 
 #Console Entry Point
 def main():
