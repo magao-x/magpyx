@@ -123,7 +123,7 @@ def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False
             title = f'Peaks_{dateTimeObj.strftime("%Y-%m-%d-at-%H-%M-%S")}-UTC'
         plt.title(title)
         plt.show()
-        plt.text(0.5, 0.1, f'Best Focus Position: {focus_pos} mm', verticalalignment='bottom', horizontalalignment='center', transform=plt.gca().transAxes)
+        plt.text(0.5, 0.1, f'Best Focus Position: {np.around(focus_pos, decimals=4)} mm', verticalalignment='bottom', horizontalalignment='center', transform=plt.gca().transAxes)
         if savefigure==True:
             peak_path = f'/tmp/{title}.png'
             plt.savefig(peak_path)
