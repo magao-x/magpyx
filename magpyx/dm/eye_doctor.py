@@ -10,6 +10,8 @@ To do:
 from copy import deepcopy
 from time import sleep
 from random import shuffle
+import os
+from glob import glob
 
 import numpy as np
 
@@ -27,7 +29,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('eye_doctor')
 
-from ..utils import ImageStream
+from ..utils import ImageStream, send_zeros_to_shmim
 
 #-----purepyindi interaction-----
 
@@ -395,6 +397,13 @@ def airy_metric(measured, model, penalty=0.):
 def get_pupil_variance(shmim, nimages, pupil_mask):
     images = grab_images(shmim, nimages)
     return np.var(np.mean(images, axis=0)[pupil_mask])
+
+def get_rss(arrlist):
+    ''' get root sum square of image '''
+    lsq = []
+    for image in arrlist:
+        lsq.append((np.mean(np.sum(image**2))))
+    return np.mean(lsq)
 
 #-----the eye doctor-----
 
@@ -962,6 +971,7 @@ def console_update_flat():
     parser = argparse.ArgumentParser()
     parser.add_argument('dm', type=str, help='DM. One of ["woofer", "ncpc", "tweeter"]')
     parser.add_argument('--portINDI', type=int, default=7624, help='INDI Port on which [dm]Modes can be found. Default: 7624.')
+    parser.add_argument('-c', '--clearall', action='store_true', help='Clear all dm channels?')
     args = parser.parse_args()
 
     dm = args.dm
@@ -976,17 +986,26 @@ def console_update_flat():
     if dm.upper() == 'WOOFER':
         device = 'wooferModes'
         dmdevice = 'dmwoofer'
+        shmim = 'dm00disp'
     elif dm.upper() == 'NCPC':
         device = 'ncpcModes'
         dmdevice = 'dmncpc'
+        shmim = 'dm02disp'
     elif dm.upper() == 'TWEETER':
         device = 'tweeterModes'
         dmdevice = 'dmtweeter'
+        shmim = 'dm01disp'
     else:
-        raise ValueErorr('Unknown DM provided. Must be one of "woofer", "tweeter", or "ncpc".')
+        raise ValueError('Unknown DM provided. Must be one of "woofer", "tweeter", or "ncpc".')
 
     logger.info(f"Cleared all modes on {device}.")
     zero_dm(client, device)
+
+    if args.clearall:
+        channels = [os.path.basename(c).split('.')[0] for c in sorted(glob(f'/milk/shm/{shmim}[0-9]*'))]
+        for c in channels:
+            send_zeros_to_shmim(c)
+            logger.info(f"Zeroed shmim {c}.")
 
     # toggle reload flat
     status_dict = {f'{dmdevice}.flat.target': { 'value': 'flat.fits'}}
