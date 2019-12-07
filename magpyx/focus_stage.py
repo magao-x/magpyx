@@ -199,15 +199,15 @@ def main():
     #parser.add_argument('shmim_name', type=str, help='Name of shared memory name')
     parser.add_argument('-f', '--filepath', type=str, help='File Path')
     parser.add_argument('-c', '--camera', type=str, help='Camera Shared Memory Image')
-    parser.add_argument('--start',type=float, default = 0, help='Starting Stage Position')
-    parser.add_argument('--stop',type=float, default = None, help='Ending Stage Position')
-    parser.add_argument('--steps',type=int, default = 50, help='Number of Steps')
-    parser.add_argument('-exp','--exposure',type=float, default = None, help='Exposure Time')
-    parser.add_argument('-t','--threshold',type=float, default = 0.5, help='Threshold of Peak Values')
-    parser.add_argument('-save','--savefigure', action='store_true', help='Saving Peaks Plot')
-    parser.add_argument('-o','--outpath',type=str, default = None, help='File Outpath')
-    parser.add_argument('-n','--number',type=int, default = 1, help='Number of Images')
-    parser.add_argument('-s','--sequence',type=int, default = 1, help='Number of Sequences')
+    parser.add_argument('--start', type=float, default = 0, help='Starting Stage Position')
+    parser.add_argument('--stop', type=float, default = None, help='Ending Stage Position')
+    parser.add_argument('--steps', type=int, default = 50, help='Number of Steps')
+    parser.add_argument('-exp', '--exposure', type=float, default = None, help='Exposure Time')
+    parser.add_argument('-t', '--threshold', type=float, default = 0.5, help='Threshold of Peak Values')
+    parser.add_argument('-save', '--savefigure', action='store_true', help='Saving Peaks Plot')
+    parser.add_argument('-o','--outpath', type=str, default = None, help='File Outpath')
+    parser.add_argument('-n','--number', type=int, default = 1, help='Number of Images')
+    parser.add_argument('-s','--sequence', type=int, default = 1, help='Number of Sequences')
     args = parser.parse_args()
     if args.filepath is not None and args.camera is not None:
         print('Cannot provide both a file path and a camera')
@@ -220,6 +220,8 @@ def main():
         data_cube = fits.getdata(args.filepath)
         if args.stop is None:
             stop = 75
+        else:
+            stop = args.stop
         positions = np.linspace(args.start,stop,args.steps)
         analysis(positions, data_cube, threshold=args.threshold, savefigure=args.savefigure, display=True)
     elif args.camera is not None:
