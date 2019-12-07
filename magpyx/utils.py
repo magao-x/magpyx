@@ -3,6 +3,10 @@ import numpy as np
 import ImageStreamIOWrap as shmio
 from time import sleep
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('utils')
+
 def indi_send_and_wait(client, cmd_dict, tol=1e-3, wait_for_properties=False, timeout=None, return_dict_and_exit=False):
     '''
     Given a dictionary of the form
@@ -137,7 +141,8 @@ class ImageStream(shmio.Image):
     def grab_many(self, n):
     	# find a free semaphore to wait on
         if self.semindex is None:
-            self.semindex = self.getsemwaitindex(0)
+            self.semindex = self.getsemwaitindex(1)
+            logger.info(f'Got semaphore index {self.semindex}.')
         i = 0
         cube = []
         # flush semaphores before collecting images
