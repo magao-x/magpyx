@@ -62,7 +62,7 @@ def fit(img, display=False):
     
     x_pos = np.linspace(0, len(rad_profile), len(rad_profile), endpoint=False)
     sigmaguess = x_pos[rad_profile < rad_profile.max() / 2].min()/2.355*2
-    initialguess = [rad_profile.max() - rad_profile.min(), 0, sigmaguess, rad_profile.min()]
+    initialguess = [rad_profile.max() - rad_profile.min(), 0, sigmaguess, rad_profile.min()] #[a, x0, sigma,c] = [amplitude, center shift, fwhm term, background]
     xplot = np.linspace(0,75,5000)
         
     try:
@@ -98,11 +98,11 @@ def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False
         all_peaks.append(peak)
     all_peaks = np.asarray(all_peaks)
     max_peak = max(all_peaks)
-    goodindices = all_peaks > (threshold*max_peak)
+    goodindices = all_peaks > (threshold*max_peak) #throws out images with peak values less than threshold*maximum peak
     peaks = all_peaks[goodindices]
     positions = all_positions[goodindices]
     
-    z = np.polyfit(positions,peaks,2)
+    z = np.polyfit(positions,peaks,2) #2nd order polynomial fit
     p = np.poly1d(z)
     min_pos = np.min(positions)
     max_pos = np.max(positions)
