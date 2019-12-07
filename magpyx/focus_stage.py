@@ -91,7 +91,7 @@ def fit(img, display=False):
     return peak
 
 #Analysis of Peaks
-def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False, display=False):
+def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False, outpath=None, display=False):
     all_peaks = []
     for i, img in enumerate(images):
         peak = fit(img)
@@ -125,7 +125,7 @@ def analysis(all_positions, images, threshold=0.5, camera=None, savefigure=False
         plt.show()
         plt.text(0.5, 0.1, f'Best Focus Position: {np.around(focus_pos, decimals=4)} mm', verticalalignment='bottom', horizontalalignment='center', transform=plt.gca().transAxes)
         if savefigure==True:
-            peak_path = f'/tmp/{title}.png'
+            peak_path = f'{outpath}/{title}.png'
             plt.savefig(peak_path)
             print(peak_path)
         print(f'That maximum peak is {np.around(np.max(p(positions2)), decimals=2)} counts')
@@ -178,7 +178,7 @@ def auto_focus_realtime(camera='camsci1', stage='stagesci1', start=0, stop=None,
     positions = np.linspace(start,stop,steps)
     data_cube = acquire_data(client, positions, camera=camera, stage=stage, outpath=outpath, number=number, sequence=sequence) #capture/bg subtract images
     all_positions = np.tile(positions,sequence)
-    focus_pos = analysis(all_positions, data_cube, threshold=threshold, camera=camera, savefigure=savefigure, display=True) #find best focus
+    focus_pos = analysis(all_positions, data_cube, threshold=threshold, camera=camera, savefigure=savefigure, outpath=outpath, display=True) #find best focus
     print('The camera is moving to best focus')
     command_stage(client, f'{stage}.position.target', focus_pos)
     print('The camera is at best focus')
@@ -205,7 +205,7 @@ def main():
     parser.add_argument('-exp', '--exposure', type=float, default = None, help='Exposure Time')
     parser.add_argument('-t', '--threshold', type=float, default = 0.5, help='Threshold of Peak Values')
     parser.add_argument('-save', '--savefigure', action='store_true', help='Saving Peaks Plot')
-    parser.add_argument('-o','--outpath', type=str, default = None, help='File Outpath')
+    parser.add_argument('-o','--outpath', type=str, default ='.', help='Path (directory name) where we should save plots and data, default current dir')
     parser.add_argument('-n','--number', type=int, default = 1, help='Number of Images')
     parser.add_argument('-s','--sequence', type=int, default = 1, help='Number of Sequences')
     args = parser.parse_args()
@@ -223,7 +223,7 @@ def main():
         else:
             stop = args.stop
         positions = np.linspace(args.start,stop,args.steps)
-        analysis(positions, data_cube, threshold=args.threshold, savefigure=args.savefigure, display=True)
+        analysis(positions, data_cube, threshold=args.threshold, savefigure=args.savefigure, outpath=args.outpath, display=True)
     elif args.camera is not None:
         print(args)
         stage_name = args.camera.replace('cam','stage')
