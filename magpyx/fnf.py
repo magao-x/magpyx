@@ -1,98 +1,38 @@
 '''
-Dump from notebook.
-
 To do:
-* Remove unecessary imports / find missing imports
-* Clean up functions
 * Make functions for closed loop / end-to-end operations
-* Generalize for ALPAO/BMC/DM of arbitrary shape (I guess)
 * Add option for using DM model instead of measured IFs
 * Add option for modal approach instead of IFs?
 * Add command-line hooks of the form:
 >> fnf camsci1 dmncpc --if_cube "/opt/MagAOX/etc/mygreatIFs.fits" --filter 1.4
->> fnf_calib camsci1 dmncpc --nrepeats 5 --sdflkj
+>> fnf_geometric_calib camsci1 dmncpc --nrepeats 5 --sdflkj
+>> fnf_if_calib camsci1 dmncpc --nrepeats 5 --sdflkj
 
 * Test by getting working on the camscis with the NCPC DM?
+* optimize (replace FFTs in odd/even calc, make centroiding optional, etc)
+* need to figure out structure for saving/loading calibration products
 '''
 
+from time import sleep
+from copy import deepcopy
+
 import numpy as np
-
-from scipy.ndimage import gaussian_filter
-from scipy.ndimage.measurements import center_of_mass as com
-from scipy.ndimage.interpolation import shift
-from skimage.restoration import unwrap_phase
-
-from magpyx.utils import ImageStream
-import purepyindi as indi
 from astropy.io import fits
+from scipy.ndimage import gaussian_filter
+from scipy.ndimage.interpolation import shift
+from scipy.optimize import leastsq
+from scipy.linalg import hadamard
+from skimage import draw
 import poppy
 from poppy import zernike
-from time import sleep
-import dm_model as model
-from scipy.linalg import hadamard
-from copy import deepcopy
-from scipy.optimize import leastsq
-from skimage import draw
 
-def pseudoinverse_svd(matrix, abs_threshold=None, rel_threshold=None, n_threshold=None):
-    '''
-    Compute the pseudo-inverse of a matrix via an SVD and some threshold.
-    
-    Only one type of threshold should be specified.
-    
-    Parameters:
-        matrix: nd array
-            matrix to invert
-        abs_threshold: float
-            Absolute value of sing vals to threshold
-        rel_threshold: float
-            Threshold sing vals < rel_threshold * max(sing vals)
-        n_threshold : int
-            Threshold beyond the first n_threshold singular values
-        
-    Returns:
-        pseudo-inverse : nd array
-            pseduo-inverse of input matrix
-        threshold : float
-            The absolute threshold computed
-        U, s, Vh: nd arrays
-            SVD of the input matrix
-    '''
-    from scipy import linalg
+from magpyx.utils import ImageStream
+from magpyx.dm.t2w_offload import pseudoinverse_svd
+#import dm_model as model
 
-    
-    if np.count_nonzero([abs_threshold is not None,
-                         rel_threshold is not None,
-                         n_threshold is not None]) > 1:
-        raise ValueError('You must specify only one of [abs_threshold, rel_threshold, n_threshold]!')
-        
-    # take the SVD
-    U, s, Vh = np.linalg.svd(matrix, full_matrices=False)
-        
-    #threshold
-    if abs_threshold is not None:
-        threshold = abs_threshold
-        reject = s <= threshold
-    elif rel_threshold is not None:
-        threshold = s.max() * rel_threshold
-        reject = s <= threshold
-    elif n_threshold is not None:
-        reject = np.arange(len(s)) > n_threshold
-        threshold = s[n_threshold]
-    else:
-        threshold = 1e-16
-        reject = s <= threshold
-    
-    sinv = np.diag(1./s).copy() # compute the inverse (this could create NaNs)
-    sinv[reject] = 0. #remove elements that don't meet the threshold
-    
-    # just to be safe, remove any NaNs or infs
-    sinv[np.isnan(sinv)] = 0.
-    sinv[np.isinf(sinv)] = 0.
-    
-    # compute the pseudo-inverse: Vh.T s^-1 U_dagger (hermitian conjugate)
-    return np.dot(Vh.T, np.dot(sinv, U.T.conj())), threshold, U, s, Vh
-
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('f&f')
 
 def get_even_odd_fft(im):
     # fft and use fourier properties to return the even/odd components
@@ -259,8 +199,21 @@ def ff_estimate_phase(psf1, psf2, diff_phase, eta=10000, a=None, pupil=None, S=N
     phase_est *= pupil.astype(bool)
     return phase_est
 
-def fit_pupil_to_psf(image, pupil_func, fwhm_guess=10):
-    return fit_psf(image, pupil_func, fwhm_guess=fwhm_guess)
+def fit_pupil_to_psf(camstream, nimages, cut_to=None, padding=0, fwhm_guess=10):
+    # measure an image
+    image = np.mean(camstream.grab_many(nimages),axis=0)
+    if cut_to is None:
+        meas_psf = image - np.median(image)
+    else:
+        yxmax = np.where(image == image.max())
+        cenyx = (yxmax[0][0], yxmax[1][0])
+        logger.info(f'Found centroid at {cenyx}')
+        meas_psf = pad(take_cutout(image, cut_to, cenyx=cenyx) - np.median(take_cutout(image, cut_to, cenyx=cenyx)), padding)
+
+    scale_factor = fit_psf(meas_psf, get_magaox_pupil, fwhm_guess=fwhm_guess)[0][0]
+    pupil = get_magaox_pupil(meas_psf.shape[0], grid_size=6.5*scale_factor)
+    return pupil, scale_factor
+
     
 def fit_psf(meas_psf, pupil_func, fwhm_guess=10.):
     
@@ -276,6 +229,45 @@ def psf_err(params, pupil_func, sampling , meas_psf):
 
     #print(rms(sim_psf-meas_psf, np.ones_like(sim_psf).astype(bool)))
     return (normalize_psf(sim_psf) - normalize_psf(meas_psf)).flatten()
+
+def fit_dm_rotation_ellipticity(camstream, dmstream, dm_mask, nimages, cmd_value=0.5):
+    
+    # get tip/tilt terms
+    zbasis_dm = zernike.arbitrary_basis(dm_mask, outside=0., nterms=3)[1:] 
+    
+    # measure psf displacement from tip/tilt
+    value = cmd_value
+
+    # measure
+    tt_ims = []
+    tt_ims.append(np.mean(camstream.grab_many(nimages), axis=0)) #ref
+    for tt in zbasis_dm:
+        dmstream.write((tt * value).astype(dmstream.buffer.dtype))
+        sleep(0.5)
+        tt_ims.append(np.mean(camstream.grab_many(nimages), axis=0))
+    dmstream.write(np.zeros(dmstream.buffer.shape, dtype=dmstream.buffer.dtype))
+
+    # compute displacements
+    tt_coms = []
+    for im in tt_ims:
+        im_com = np.squeeze(np.where(im == im.max()))
+        tt_coms.append(im_com)
+    tt_coms = np.vstack(tt_coms)
+    tt_coms -= tt_coms[0]
+
+    # get angles of displacement
+    angle1 = np.arctan2(tt_coms[1][0], tt_coms[1][1])
+    angle2 = np.arctan2(tt_coms[2][0], tt_coms[2][1]) - np.pi/2.
+    mean_angle = (angle1 + angle2) / 2.
+    logger.info(f'Found rotation: {mean_angle} rad, {np.rad2deg(mean_angle)} deg')
+
+    # get ratio of displacement
+    disp1 = np.sqrt(tt_coms[1][0]**2 + tt_coms[1][1]**2)
+    disp2 = np.sqrt(tt_coms[2][0]**2 + tt_coms[2][1]**2)
+    disp_ratio = disp1 / disp2
+    logger.info(f'Found x/y displacement ratio: {disp_ratio}')
+    
+    return mean_angle, disp_ratio
 
 def compute_strehl(image, model, cutout=100):
     
@@ -294,11 +286,16 @@ def compute_strehl(image, model, cutout=100):
     # Strehl = measured ratio / model ratio
     return meas_normpeak / model_normpeak
 
-def take_cutout(image, cutout=100):
-    y, x = np.where(image == image.max())
+def take_cutout(image, cutout=100, cenyx=None):
+    if cutout is None:
+        return image
+    if cenyx is None:
+        y = int(np.rint((image.shape[0] - 1) / 2.))
+        x = int(np.rint((image.shape[0] - 1) / 2.))
+    else:
+        y, x = cenyx
     lower = lambda x: x if x > 0 else 0
-    return deepcopy(image)[lower(y[0]-cutout//2):y[0]+cutout//2, lower(x[0]-cutout//2):x[0]+cutout//2]
-
+    return deepcopy(image)[lower(y-cutout//2):y+cutout//2, lower(x-cutout//2):x+cutout//2]
 
 def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
     nact = np.count_nonzero(dm_mask)
@@ -496,6 +493,54 @@ def ff_estimate_phase(psf1, psf2, diff_phase, eta=10000, a=None, pupil=None, S=N
     phase_est *= pupil.astype(bool)
     return phase_est
 
+def measure_interaction_matrix(camstream, dmstream, dm_mask, zbasis_dm, zbasis_pupil, microns_surface_to_rad_wavefront, fit_pupil, nimages=50, nrepeats=10, hval=0.025, coeff_scale=0.005, nmodes=5, eta=1e-3):
+    
+    hmodes = get_hadamard_modes(dm_mask)
+    nhad = len(hmodes)
+    
+    # measure hadamard modes with phase diversity
+    allhphases = []
+    for n in range(nrepeats):
+        log.info(f'On Hadamard measurement sequence {n+1}/{nrepeats}!')
+
+        # unique phase diversity for each measurement (including +/-)
+        allcoeffs = []
+        all_diff_cmds = []
+        all_diff_ests = []
+        for n in range(2*nhad):
+            coeffs = np.random.normal(scale=coeff_scale, size=nmodes)
+            diff_phase_cmd =  np.sum([c*z for c,z in zip(coeffs,zbasis_dm[2:nmodes+2])],axis=0)
+            diff_phase_est = np.sum([c*z for c,z in zip(coeffs,zbasis_pupil[2:nmodes+2])],axis=0) * microns_surface_to_rad_wavefront
+            all_diff_cmds.append(diff_phase_cmd)
+            all_diff_ests.append(diff_phase_est)
+
+        hmodes, hpsfs = measure_hadamard(camstream, dmstream, dm_mask, all_diff_cmds, phase_bias=None,
+                                         nimages=nimages, hvalue=hval, do_pm=True)
+        hphases, hphases_pm = estimate_phases_from_hadamard_measurements(hpsfs, fit_pupil, all_diff_ests, eta=eta)
+        allhphases.append(hphases)
+        
+    # get ifs
+    hphases_mean = np.mean(allhphases, axis=0) / hval
+    hinv = np.linalg.pinv(hmodes)
+    ifmat = np.dot(hinv, hphases_mean.reshape(128,-1))
+    
+    return ifmat, hphases, hmodes
+
+def get_cmat(ifmat, n_threshold=50):
+    cmat, threshold, U, s, Vh = pseudoinverse_svd(ifs, n_threshold=50)
+    return cmat
+
+def clean_ifmat(ifmat, zbasis_pupil, pupil_sm, imshape, ifrad=9):
+    ifs_clean = []
+    for curif in ifmat:
+        curif2d = curif.reshape(imshape)
+        cenyx = np.where(curif2d == curif2d.max())
+        if_mask = get_if_mask(cenyx, 9, imshape)
+        fit_z = surface_from_zcoeffs(fit_zernikes(curif2d*~if_mask, zbasis_pupil[:30], pupil_sm.astype(bool)), zbasis_pupil)
+        ifs_clean.append((pupil_sm*(curif2d-fit_z)).flatten())
+    ifs_clean = np.asarray(ifs_clean)
+    return ifs_clean
+    
 def get_if_mask(cenyx, radius, shape):
     mask = np.zeros(shape, dtype=bool)
     circ = draw.circle(cenyx[0][0], cenyx[1][0], radius, shape=shape)
@@ -508,6 +553,102 @@ def fit_zernikes(image, zbasis, mask):
 
 def surface_from_zcoeffs(coeffs, zbasis):
     return np.sum([c*z for c,z in zip(coeffs,zbasis)],axis=0)
+
+def fnf_closed_loop(camstream, dmstream, ifmat, cmat, slavedmap, pupil, dm_mask, dm_map, model_psf, cenwave=0.8, gain=0.1, leak_gain=0.02, nimages=30, niter=None, centroid=True, eta=1e-3, delay=0., gauss_sigma=1.2):
+
+    dm_shape = dm_mask.shape
+    nact = dm_map.max()
+    imshape = pupil.shape
+    
+    # initial phase estimate before entering the loop
+    init_psf  = np.mean(camstream.grab_many(nimages).astype(float), axis=0) #- dark_median
+    init_psf = cut_and_pad_image(init_psf)
+    init_psf -= np.median(init_psf)
+    init_psf = normalize_psf(init_psf) * np.sum(pupil)
+    strehl = compute_strehl(normalize_psf(init_psf), model_psf)
+
+    phase_est = gaussian_filter(ff_estimate_phase(init_psf, None, None, pupil=pupil, eta=eta, S=strehl), gauss_sigma)
+    psf_curr = init_psf
+    last_corr = 0
+    cmd = np.zeros(dm_shape)
+
+    #rms_vals = [rms(phase_est, pupil.astype(bool))]
+    #strehls = [strehl,]
+    #phase_ests = []
+    
+    try:
+        if camstream.semindex is None:
+            camstream.semindex = dmstream.getsemwaitindex(1)
+            logger.info(f'Got semaphore index {camstream.semindex}.')
+        # flush semaphores before entering loop
+        camstream.semflush(camstream.semindex)
+        while True:
+            # wait for a semaphore, then start the iteration
+            camstream.semwait(camstream.semindex)
+            
+            # -----all the loop stuff goes here-----
+            
+            # get actuator commands to correct residual phase
+            delta_cmd_good = -np.dot(phase_est.flatten(), cmat)
+            delta_cmd = np.zeros(nact)
+            delta_cmd[good_vec] = delta_cmd_good
+            delta_cmd = fill_in_slaved_cmds(delta_cmd, slaved_vec_idx, nearby)
+            delta_cmd -= np.mean(delta_cmd)
+            delta_cmd *= gain
+            
+            # leaky integrator
+            cmd -= leak_gain*cmd
+            cmd += map_vector_to_square(delta_cmd, dm_map, dm_mask)
+
+            # apply the command
+            dmstream.write((cmd).astype(dmstream.buffer.dtype))
+            sleep(delay)
+
+            # forward model to get DM response and to get phase div. input to FF
+            delta_proj = np.dot(delta_cmd, ifs_clean).reshape(imshape)
+
+            rms_val = rms(phase_est, pupil.astype(bool))
+            #rms_vals.append(rms_val)
+
+            # measure next psf
+            psf_last = psf_curr
+            psf_curr = np.mean(camstream.grab_many(nimages), axis=0)
+
+            # process the psf
+            psf_curr = cut_and_pad_image(psf_curr).astype(float)
+            psf_curr -= np.median(psf_curr)
+            psf_curr = normalize_psf(psf_curr) * np.sum(pupil)
+
+            # estimate strehl
+            strehl = compute_strehl(normalize_psf(psf_curr), model_psf)
+            #strehls.append(strehl)
+
+            # estimate phase
+            phase_est = gaussian_filter(ff_estimate_phase(shift_to_centroid(psf_last), shift_to_centroid(psf_curr), delta_proj, pupil=pupil, eta=eta, S=strehl), gauss_sigma)
+            #phase_ests.append(phase_est)
+            
+    except KeyboardInterrupt:
+        logger.info('Caught a keyboard interrupt. Exiting F&F loop.')
+
+def map_square_to_vector(cmd_square, dm_map, dm_mask):
+    '''DM agnostic mapping function'''
+    filled_mask = dm_map != 0
+    nact = np.count_nonzero(filled_mask)
+    vec = np.zeros(nact, dtype=cmd_square.dtype)
+    
+    mapping = dm_map[dm_mask] - 1
+    vec[mapping] = cmd_square[dm_mask]
+    return vec
+
+def map_vector_to_square(cmd_vec, dm_map, dm_mask):
+    '''DM agnostic mapping function'''
+    filled_mask = dm_map != 0
+    sq = np.zeros(dm_map.shape, dtype=cmd_vec.dtype)
+    
+    mapping = dm_map[filled_mask] - 1
+    sq[filled_mask] = cmd_vec[mapping]
+    sq *= dm_mask
+    return sq
 
 def grab_nearest(slaved, dm_mask):
     nearest = []
@@ -529,6 +670,20 @@ def get_distance(locyx, mask):
     idx -= locyx[1]
     distance = np.sqrt(idy**2 + idx**2)
     return map_square_to_vector_ALPAO(distance)
+
+def get_slave_map(ifmat, threshold, dm_mask, map_vec_to_square_func, map_square_to_vec_func):
+    
+    if_rms = np.sqrt(np.mean(ifmat**2,axis=(1)))
+    bad = map_vec_to_square_func(if_rms) < threshold
+    slaved = bad & dm_mask
+
+    slaved_vec = map_vec_to_square_func(slaved)
+    good_vec = map_square_to_vec_func(~slaved)
+    slaved_vec_idx = np.where(slaved_vec)[0]
+
+    ifs_good = ifmat[good_vec]
+    
+    return slaved_vec, slaved_vec_idx, slaved, ifs_good
      
 def fill_in_slaved_cmds(cmd_vec, slaved_vec_idx, neighbor_mapping):
     cmd = cmd_vec.copy()
