@@ -142,7 +142,7 @@ def simulate_psf(pupil, scale_factor, bg, phase, add_noise=True):
         psf_out = psf_scaled
     return psf_out
 
-def get_magaox_pupil(npix, rotation=38.75, grid_size=6.5):
+def get_magaox_pupil(npix, rotation=38.75, grid_size=6.5, sm=False):
     pupil_diam = 6.5 #m
     secondary = 0.293 * pupil_diam
     primary = poppy.CircularAperture(radius=pupil_diam/2.)
@@ -152,26 +152,14 @@ def get_magaox_pupil(npix, rotation=38.75, grid_size=6.5):
                                                  #support_offset_y=[0, -0.34, 0.34, 0],
                                                  rotation=rotation,
                                                  name='Complex secondary')
-    pupil = poppy.CompoundAnalyticOptic( opticslist=[primary], name='Magellan')
+    opticslist = [primary,]
+    if sm:
+        opticslist.append(sec)
+    pupil = poppy.CompoundAnalyticOptic( opticslist=opticslist, name='Magellan')
     sampled = pupil.sample(npix=npix, grid_size=grid_size)
     norm = np.sum(sampled)
     return sampled
-
-def get_magaox_pupil_sm(npix, rotation=38.75, grid_size=6.5):
-    pupil_diam = 6.5 #m
-    secondary = 0.293 * pupil_diam
-    primary = poppy.CircularAperture(radius=pupil_diam/2.)
-    sec = poppy.AsymmetricSecondaryObscuration(secondary_radius=secondary/2.,
-                                                 #support_angle=(45, 135, 225, 315),
-                                                 #support_width=[0.01905,]*4,
-                                                 #support_offset_y=[0, -0.34, 0.34, 0],
-                                                 rotation=rotation,
-                                                 name='Complex secondary')
-    pupil = poppy.CompoundAnalyticOptic( opticslist=[primary, sec], name='Magellan')
-    sampled = pupil.sample(npix=npix, grid_size=grid_size)
-    norm = np.sum(sampled)
-    return sampled
-
+    
 def ff_estimate_phase(psf1, psf2, diff_phase, eta=10000, a=None, pupil=None, S=None):
     
     if a is None:
