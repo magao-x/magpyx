@@ -59,10 +59,11 @@ def get_a(pupil):
 def get_phase_estimate(sgnv, magv, y):
     return ifft2_shiftnorm(sgnv*magv - 1j*y)
 
-def shift_to_centroid(im, order=3):
-    comyx = np.where(im == im.max())#com(im)
-    cenyx = ((im.shape[0] - 1)/2., (im.shape[1] - 1)/2.)
-    shiftyx = (cenyx[0]-comyx[0], cenyx[1]-comyx[1])
+def shift_to_centroid(im, shiftyx=None, order=3):
+    if shiftyx is None:
+        comyx = np.where(im == im.max())#com(im)
+        cenyx = ((im.shape[0] - 1)/2., (im.shape[1] - 1)/2.)
+        shiftyx = (cenyx[0]-comyx[0], cenyx[1]-comyx[1])
     median = np.median(im)
     return shift(im, shiftyx, order=1, cval=median)
 
@@ -187,33 +188,26 @@ def ff_estimate_phase(psf1, psf2, diff_phase, eta=10000, a=None, pupil=None, S=N
     phase_est *= pupil.astype(bool)
     return phase_est
 
-def fit_pupil_to_psf(camstream, nimages, cut_to=None, padding=0, fwhm_guess=10):
+def fit_pupil_to_psf(camstream, nimages, padding=0, fwhm_guess=10):
     # measure an image
-    image = np.mean(camstream.grab_many(nimages),axis=0)
-    if cut_to is None:
-        meas_psf = image - np.median(image)
-    else:
-        yxmax = np.where(image == image.max())
-        cenyx = (yxmax[0][0], yxmax[1][0])
-        logger.info(f'Found centroid at {cenyx}')
-        meas_psf = pad(take_cutout(image, cut_to, cenyx=cenyx) - np.median(take_cutout(image, cut_to, cenyx=cenyx)), padding)
-
-    scale_factor = fit_psf(meas_psf, get_magaox_pupil, fwhm_guess=fwhm_guess)[0][0]
+    image = np.mean(camstream.grab_many(nimages),axis=0).astype(float)
+    meas_psf = image - np.median(image)
+    meas_psf = shift_to_centroid(meas_psf)
+    meas_psf = pad(meas_psf, padding)
+    scale_factor, shifty, shiftx = fit_psf(meas_psf, get_magaox_pupil, fwhm_guess=fwhm_guess)[0]
     pupil = get_magaox_pupil(meas_psf.shape[0], grid_size=6.5*scale_factor)
-    return pupil, scale_factor
+    return pupil, scale_factor, shifty, shiftx  
 
-    
 def fit_psf(meas_psf, pupil_func, fwhm_guess=10.):
-    
     shape = meas_psf.shape[0]
     pupil_guess = fwhm_guess / 2. 
-    return leastsq(psf_err, [pupil_guess,], args=(pupil_func, shape, meas_psf), epsfcn=0.1)
+    return leastsq(psf_err, [pupil_guess, 0, 0], args=(pupil_func, shape, meas_psf), epsfcn=0.01)
 
 def psf_err(params, pupil_func, sampling , meas_psf):
-    scale_factor = params[0]
+    scale_factor, ceny, cenx = params
     pupil = pupil_func(sampling, grid_size=6.5*scale_factor)
     
-    sim_psf = simulate_psf(pupil, 1, 0, np.zeros((sampling, sampling)), add_noise=False)
+    sim_psf = shift_to_centroid(simulate_psf(pupil, 1, 0, np.zeros((sampling, sampling)), add_noise=False), (ceny, cenx))
 
     #print(rms(sim_psf-meas_psf, np.ones_like(sim_psf).astype(bool)))
     return (normalize_psf(sim_psf) - normalize_psf(meas_psf)).flatten()
@@ -229,9 +223,10 @@ def fit_dm_rotation_ellipticity(camstream, dmstream, dm_mask, nimages, cmd_value
     # measure
     tt_ims = []
     tt_ims.append(np.mean(camstream.grab_many(nimages), axis=0)) #ref
+    sleep(1.0)
     for tt in zbasis_dm:
         dmstream.write((tt * value).astype(dmstream.buffer.dtype))
-        sleep(0.5)
+        sleep(1.0)
         tt_ims.append(np.mean(camstream.grab_many(nimages), axis=0))
     dmstream.write(np.zeros(dmstream.buffer.shape, dtype=dmstream.buffer.dtype))
 
@@ -288,7 +283,7 @@ def take_cutout(image, cutout=100, cenyx=None):
 def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
     nact = np.count_nonzero(dm_mask)
     if shuffle is None:
-        shuffle = slice(len(nact))
+        shuffle = slice(nact)
     np2 = 2**int(np.ceil(np.log2(nact)))
     print(f'Generating a {np2}x{np2} Hadamard matrix.')
     hmat = hadamard(np2)
@@ -301,68 +296,10 @@ def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
         cmds.append(cmd)
     return np.asarray(cmds)'''
 
-def get_response_measurements(camstream, dmstream, modes, scale_factor, phase_diversity):
-    measurements = []
-    for m in modes:
-        # send command to dm
-        camstream.dm.state = m # replace me
-        # optional sleep
-        # measure on camera
-        measurements.append(camstream.get_latest())
-        
-        camstream.dm.state = m + phase_diversity # replace me
-        # optional sleep
-        # measure on camera
-        measurements.append(camstream.get_latest())
-        
-    return measurements
-
-def measure_hadamard(camstream, dmstream, dm_mask, scale_factor, phase_diversity, do_pm=True):
-    hmodes = get_hadamard_modes(dm_mask)
-    if do_pm:
-        hmodes_neg = -1 * hmodes
-        hmodes = np.vstack([hmodes.copy(), hmodes_neg])
-        
-    measured = get_response_measurements(camstream, dmstream, hmodes, scale_factor, phase_diversity)
-    return hmodes, np.asarray(measured)
-
-def fast_and_furious(psf1, psf2, eta=1.0):
-    pass
-
-def take_hadamard_measurements(dm_pupil, camstream, scale_factor, value=0.5):
-
-    # take the hadamard measurements
-    zbasis = zernike.arbitrary_basis(camstream.dm.circmapping, outside=0., nterms=10)[1:] 
-    coeffs = np.random.normal(scale=0.01, size=len(zbasis))
-    diff_phase_est = np.sum([c*z for c,z in zip(coeffs,zbasis)],axis=0).T[camstream.dm.circmapping] # transpose because of DM mapping. NEED TO ACCO
-
-    hmodes, hpsfs = measure_hadamard(camstream, None, camstream.dm.circmapping, scale_factor, diff_phase_est)
-    
-    return hmodes, hpsfs
-
-def estimate_phases_from_hadamard_measurements(hpsfs, fit_pupil, scale_factor, eta=1.0):
-    model_psf = simulate_psf(fit_pupil, 1., 0., 0, add_noise=False)
-
-    camstream.dm.state = diff_phase_est
-    phase_div = camstream.dm.get_surface(scale=scale_factor)
-
-    hphases_pm = []
-    for psf_had, psf_had_pd in zip(hpsfs[::2], hpsfs[1::2]):
-
-        # estimate strehl
-        strehl = compute_strehl(psf_had, model_psf)
-
-        # estimate phase
-        phase_est = ff_estimate_phase(psf_had, psf_had_pd, phase_div, pupil=fit_pupil, eta=eta, S=strehl)
-        hphases_pm.append(phase_est)
-    hphases_pm = np.asarray(hphases_pm)
-    hphases = (hphases_pm[:len(hphases_pm) // 2] - hphases_pm[len(hphases_pm) // 2:]) / 2. # difference the plus/minus
-    return hphases
-
 def cut_and_pad_image(image, cutlen=256, padlen=128):
     return pad(take_cutout(image, cutlen), padlen)
 
-def get_response_measurements(camstream, dmstream, modes, phase_diversity, dm_mask, nimages=1):
+def get_response_measurements(camstream, dmstream, modes, phase_diversity, dm_mask, nimages=1, padding=0):
     measurements = []
     for i, m in enumerate(modes):
         #m = m.copy() - np.mean(m[dm_mask])
@@ -370,18 +307,24 @@ def get_response_measurements(camstream, dmstream, modes, phase_diversity, dm_ma
         dmstream.write(m.astype(dmstream.buffer.dtype))
         sleep(0.01)
         # measure on camera
-        measurements.append(np.mean(camstream.grab_many(nimages),axis=0))
+        im = np.mean(camstream.grab_many(nimages),axis=0).astype(float)
+        im -= np.median(im)
+        im = pad(im, padding)
+        measurements.append(im)
         
         dmstream.write((m+phase_diversity[i]).astype(dmstream.buffer.dtype))
         sleep(0.01)
         # measure on camera
-        measurements.append(np.mean(camstream.grab_many(nimages),axis=0))
+        im = np.mean(camstream.grab_many(nimages),axis=0).astype(float)
+        im -= np.median(im)
+        im = pad(im, padding)
+        measurements.append(im)
         
     dmstream.write(np.zeros(dmstream.buffer.shape, dtype=dmstream.buffer.dtype))
         
     return measurements
 
-def measure_hadamard(camstream, dmstream, dm_mask, phase_diversity, phase_bias=None, hvalue=0.05, nimages=1, do_pm=True, roll=0, shuffle=None):
+def measure_hadamard(camstream, dmstream, dm_map, dm_mask, phase_diversity, padding=0, phase_bias=None, hvalue=0.05, nimages=1, do_pm=True, roll=0, shuffle=None):
     hmodes = get_hadamard_modes(dm_mask, roll=roll, shuffle=shuffle) * hvalue
     if do_pm:
         hmodes_neg = -1 * hmodes
@@ -389,13 +332,13 @@ def measure_hadamard(camstream, dmstream, dm_mask, phase_diversity, phase_bias=N
         
     hcmds = []
     for h in hmodes:
-        hcmds.append(map_vector_to_square_ALPAO(h))
+        hcmds.append(map_vector_to_square(h, dm_map, dm_mask))
     hcmds = np.asarray(hcmds)
     
     if phase_bias is not None:
         hcmds = hcmds + phase_bias
         
-    measured = get_response_measurements(camstream, dmstream, hcmds, phase_diversity, dm_mask, nimages=nimages)
+    measured = get_response_measurements(camstream, dmstream, hcmds, phase_diversity, dm_mask, nimages=nimages, padding=padding)
     return hcmds, np.asarray(measured)
 
 def vector_to_2d(vector, mask):
@@ -403,85 +346,30 @@ def vector_to_2d(vector, mask):
     arr[mask] = vector
     return arr
 
-def estimate_phases_from_hadamard_measurements(hpsfs, fit_pupil, phase_diversity, eta=1.0):
-    wavelength = .650
-    microns_surface_to_rad_wavefront = 4*np.pi / wavelength
+def estimate_phases_from_hadamard_measurements(hpsfs, fit_pupil, phase_diversity, microns_surface_to_rad_wavefront, padding=0, eta=1.0):
     model_psf = normalize_psf(simulate_psf(fit_pupil, 1., 0., 0, add_noise=False))
-
     hphases_pm = []
     for i, (psf_had, psf_had_pd) in enumerate(zip(hpsfs[::2], hpsfs[1::2])):
-        psf_had = cut_and_pad_image(psf_had).astype(float)
         psf_had -= np.median(psf_had)
+        psf_had = pad(psf_had, padding)
         psf_had = normalize_psf(psf_had) * np.sum(fit_pupil)
-        psf_had_pd = cut_and_pad_image(psf_had_pd).astype(float)
         psf_had_pd -= np.median(psf_had_pd)
+        psf_had_pd = pad(psf_had_pd, padding)
         psf_had_pd = normalize_psf(psf_had_pd) * np.sum(fit_pupil)
 
         # estimate strehl
         strehl = compute_strehl(normalize_psf(psf_had), model_psf)
 
         # estimate phase
-        phase_est = ff_estimate_phase(window_image(shift_to_centroid(psf_had)), window_image(shift_to_centroid(psf_had_pd)), phase_diversity[i],
-                                      pupil=pupil, eta=eta, S=strehl)
+        phase_est = ff_estimate_phase(shift_to_centroid(psf_had), shift_to_centroid(psf_had_pd), phase_diversity[i],
+                                      pupil=fit_pupil, eta=eta, S=strehl)
 
         hphases_pm.append(phase_est)
     hphases_pm = np.asarray(hphases_pm)
     hphases = (hphases_pm[:len(hphases_pm) // 2] - hphases_pm[len(hphases_pm) // 2:]) / 2. # difference the plus/minus
     return hphases, hphases_pm
 
-def estimate_phases_from_hadamard_measurements_nopd(hpsfs, fit_pupil, eta=1.0):
-    wavelength = .650
-    microns_surface_to_rad_wavefront = 4*np.pi / wavelength
-    model_psf = normalize_psf(simulate_psf(fit_pupil, 1., 0., 0, add_noise=False))
-
-    hphases_pm = []
-    for psf_had, psf_had_pd in zip(hpsfs[::2], hpsfs[1::2]):
-        psf_had = cut_and_pad_image(psf_had).astype(float)
-        psf_had -= np.median(psf_had)
-        psf_had = normalize_psf(psf_had) * np.sum(fit_pupil)
-        # estimate strehl
-        strehl = compute_strehl(normalize_psf(psf_had), model_psf)
-
-        # estimate phase
-        phase_est = ff_estimate_phase(shift_to_centroid(psf_had), None, None,
-                                      pupil=pupil, eta=eta, S=strehl)
-
-        hphases_pm.append(phase_est)
-    hphases_pm = np.asarray(hphases_pm)
-    hphases = (hphases_pm[:len(hphases_pm) // 2] - hphases_pm[len(hphases_pm) // 2:]) / 2. # difference the plus/minus
-    return hphases, hphases_pm
-
-def ff_estimate_phase(psf1, psf2, diff_phase, eta=10000, a=None, pupil=None, S=None,):
-    
-    if a is None:
-        #a = get_a(pupil)
-        a = get_a(pupil_sm)
-    if S is None:
-        S = 0.8 #estimate_strehl
-        
-    p1_even, p1_odd = get_even_odd_fft(psf1)
-    if psf2 is not None:
-        p2_even, p2_odd = get_even_odd_fft(psf2)
-
-    y = get_y(p1_odd, a, eta)
-    magv = get_magv(p1_even, S, a, y)
-    
-    if psf2 is not None:
-        pd_even, pd_odd = get_even_odd_fft(diff_phase)
-        yd = fft2_shiftnorm(pd_odd*pupil_sm)*1j 
-        vd = fft2_shiftnorm(pd_even*pupil_sm)
-        sgnv = get_sgnv(p2_even, p1_even, vd, yd, y)
-    else:
-        sgnv = np.sign(a)
-        
-    #return sgnv, magv, y, yd, vd, p1_even, p1_odd, p2_even, p2_odd, pd_even, pd_odd
-
-    phase_est = get_phase_estimate(sgnv, magv, y).real
-    phase_est -= np.mean(phase_est[pupil.astype(bool)])
-    phase_est *= pupil.astype(bool)
-    return phase_est
-
-def measure_interaction_matrix(camstream, dmstream, dm_mask, zbasis_dm, zbasis_pupil, microns_surface_to_rad_wavefront, fit_pupil, nimages=50, nrepeats=10, hval=0.025, coeff_scale=0.005, nmodes=5, eta=1e-3):
+def measure_interaction_matrix(camstream, dmstream, dm_map, dm_mask, zbasis_dm, zbasis_pupil, microns_surface_to_rad_wavefront, fit_pupil, pd_cmd, pd_meas, nimages=50, padding=0, nrepeats=10, hval=0.025, coeff_scale=0.005, nmodes=5, eta=1e-3):
     
     hmodes = get_hadamard_modes(dm_mask)
     nhad = len(hmodes)
@@ -489,30 +377,38 @@ def measure_interaction_matrix(camstream, dmstream, dm_mask, zbasis_dm, zbasis_p
     # measure hadamard modes with phase diversity
     allhphases = []
     for n in range(nrepeats):
-        log.info(f'On Hadamard measurement sequence {n+1}/{nrepeats}!')
+        logger.info(f'On Hadamard measurement sequence {n+1}/{nrepeats}!')
 
         # unique phase diversity for each measurement (including +/-)
-        allcoeffs = []
-        all_diff_cmds = []
-        all_diff_ests = []
-        for n in range(2*nhad):
-            coeffs = np.random.normal(scale=coeff_scale, size=nmodes)
-            diff_phase_cmd =  np.sum([c*z for c,z in zip(coeffs,zbasis_dm[2:nmodes+2])],axis=0)
-            diff_phase_est = np.sum([c*z for c,z in zip(coeffs,zbasis_pupil[2:nmodes+2])],axis=0) * microns_surface_to_rad_wavefront
-            all_diff_cmds.append(diff_phase_cmd)
-            all_diff_ests.append(diff_phase_est)
+        #allcoeffs = []
+        #all_diff_cmds = []
+        #all_diff_ests = []
+        #for n in range(2*nhad):
+        #    coeffs = np.random.normal(scale=coeff_scale, size=nmodes)
+        #    diff_phase_cmd = -np.sum([c*z for c,z in zip(coeffs,zbasis_dm[2:nmodes+2])],axis=0)
+        #    diff_phase_est = np.sum([c*z for c,z in zip(coeffs,zbasis_pupil[2:nmodes+2])],axis=0) * microns_surface_to_rad_wavefront
+        #    all_diff_cmds.append(diff_phase_cmd)
+        #    all_diff_ests.append(diff_phase_est)
 
-        hmodes, hpsfs = measure_hadamard(camstream, dmstream, dm_mask, all_diff_cmds, phase_bias=None,
+        # replacing estimated phase diversity with fixed measured (via GS)
+        all_diff_cmds = [pd_cmd,] * 2*nhad
+        all_diff_ests = [pd_meas,] * 2*nhad
+
+        # take the actual measurements (hadamard + phase diversity)
+        hcmds, hpsfs = measure_hadamard(camstream, dmstream, dm_map, dm_mask, all_diff_cmds, padding=0, phase_bias=None,
                                          nimages=nimages, hvalue=hval, do_pm=True)
-        hphases, hphases_pm = estimate_phases_from_hadamard_measurements(hpsfs, fit_pupil, all_diff_ests, eta=eta)
+        return hpsfs, all_diff_ests
+        # produce the estimates
+        hphases, hphases_pm = estimate_phases_from_hadamard_measurements(hpsfs, fit_pupil, all_diff_ests, microns_surface_to_rad_wavefront, padding=padding, eta=eta)
         allhphases.append(hphases)
         
-    # get ifs
+    # get IF matrix
     hphases_mean = np.mean(allhphases, axis=0) / hval
-    hinv = np.linalg.pinv(hmodes)
-    ifmat = np.dot(hinv, hphases_mean.reshape(128,-1))
+    #return hphases_mean
+    hinv = np.linalg.inv(hmodes)
+    ifmat = np.dot( hinv, hphases_mean.reshape(nhad,-1) )
     
-    return ifmat, hphases, hmodes
+    return ifmat, hphases_mean, hmodes
 
 def get_cmat(ifmat, n_threshold=50):
     cmat, threshold, U, s, Vh = pseudoinverse_svd(ifs, n_threshold=50)
