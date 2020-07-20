@@ -913,6 +913,10 @@ def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
         outpath = '/opt/MagAOX/calib/dm/bmc_2k/'
         dm_name = 'BMC2K'
         shm_name = 'dm01disp'
+    elif dm.upper() == 'KILO': # XWCL testbed
+        outpath = '/opt/MagAOX/calib/dm/bmc_1k/'
+        dm_name = 'BMC1K'
+        shm_name = 'dm00disp'
     else:
         logger.warning('Unknown DM provided. Interpreting as a shared memory image name.')
         shm_name = dm
@@ -995,8 +999,12 @@ def console_update_flat():
         device = 'tweeterModes'
         dmdevice = 'dmtweeter'
         shmim = 'dm01disp'
+    elif dm.upper() == 'KILO': # XWCL testbed
+        device = 'kiloModes'
+        dmdevice = 'dmkilo'
+        shmim = 'dm00disp'
     else:
-        raise ValueError('Unknown DM provided. Must be one of "woofer", "tweeter", or "ncpc".')
+        raise ValueError('Unknown DM provided. Must be one of "woofer", "tweeter", "ncpc", or "kilo".')
 
     logger.info(f"Cleared all modes on {device}.")
     zero_dm(client, device)
