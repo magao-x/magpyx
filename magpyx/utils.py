@@ -167,10 +167,13 @@ def send_fits_to_shmim(shmim_name, fitsfile):
             data = f[0].data
         shmim.write(data.astype(shmim.buffer.dtype))
 
-def send_shmim_to_fits(shmim_name, fitsfile):
+def send_shmim_to_fits(shmim_name, fitsfile, nimages=1):
     from astropy.io import fits
-    with ImageStream(shmim_name) as shim:
-        data = shmim.grab_latest()
+    with ImageStream(shmim_name) as shmim:
+        if nimages == 1:
+            data = shmim.grab_latest() #don't wait for a new image, just take the current
+        else:
+            data = np.squeeze(shmim.grab_many(nimages)) # grab the nimages newest images
     fits.writeto(fitsfile, data)
 
 def send_zeros_to_shmim(shmim_name):
@@ -207,9 +210,10 @@ def console_send_shmim_to_fits():
 
     parser.add_argument('shmim_name', type=str, help='Name of shared memory name (ex: dm00disp01)')
     parser.add_argument('fitsfile', type=str, help='Path to fits file.')
+    parser.add_argument('--nimages', type=int, default=1, help='Number of images to grab')
     args = parser.parse_args()
 
-    send_shmim_to_fits(args.shmim_name, args.fitsfile)
+    send_shmim_to_fits(args.shmim_name, args.fitsfile, args.nimages)
 
 def console_send_zeros_to_shmim():
     import argparse
