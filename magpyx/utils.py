@@ -155,14 +155,14 @@ class ImageStream(shmio.Image):
         return cube
 
 def send_dm_poke(shmim_name, x, y, val):
-    with ImageStream(shmim_name) as shim:
+    with ImageStream(shmim_name) as shmim:
         curvals = shmim.grab_latest()
         curvals[y, x] = val
         shmim.write(curvals)
 
 def send_fits_to_shmim(shmim_name, fitsfile):
     from astropy.io import fits
-    with ImageStream(shmim_name) as shim:
+    with ImageStream(shmim_name) as shmim:
         with fits.open(fitsfile) as f:
             data = f[0].data
         shmim.write(data.astype(shmim.buffer.dtype))
@@ -177,7 +177,7 @@ def send_shmim_to_fits(shmim_name, fitsfile, nimages=1):
     fits.writeto(fitsfile, data)
 
 def send_zeros_to_shmim(shmim_name):
-    with ImageStream(shmim_name) as shim:
+    with ImageStream(shmim_name) as shmim:
         zeros = np.zeros_like(shmim.buffer)
         shmim.write(zeros)
 
