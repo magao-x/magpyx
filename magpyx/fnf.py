@@ -411,7 +411,7 @@ def measure_interaction_matrix(camstream, dmstream, dm_map, dm_mask, zbasis_dm, 
     return ifmat, hphases_mean, hmodes
 
 def get_cmat(ifmat, n_threshold=50):
-    cmat, threshold, U, s, Vh = pseudoinverse_svd(ifs, n_threshold=50)
+    cmat, threshold, U, s, Vh = pseudoinverse_svd(ifmat, n_threshold=n_threshold)
     return cmat
 
 def clean_ifmat(ifmat, zbasis_pupil, pupil_sm, imshape, ifrad=9):
