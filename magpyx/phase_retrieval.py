@@ -1,5 +1,3 @@
-import matplotlib.pyplot as plt
-
 import numpy as np
 import poppy
 import astropy.units as u
@@ -14,6 +12,7 @@ from numpy.lib.scimath import sqrt as csqrt
 from scipy.optimize import minimize, leastsq
 from scipy.ndimage.filters import gaussian_filter
 from numpy.lib.scimath import sqrt as csqrt
+from skimage.filters import threshold_otsu
 
 from purepyindi import INDIClient
 
@@ -41,6 +40,11 @@ DEFAULT_STEPS = [
     #{'bg' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : None}, 'opt_options' : {'ftol' : 1e-8}}
 ]
 
+amplitude_steps = [{'point_by_point_ampB' : True, 'arg_options' : {'lambda1' : 4, 'lambda2' : 0, 'kappa1' : .4, 'kappa2' : .4, 'amp_smoothing' : 1.25}},
+                  {'point_by_point_ampB' : True, 'arg_options' : {'lambda1' : 0, 'lambda2' : 2, 'kappa1' : .4, 'kappa2' : .4}},
+                  {'point_by_point_ampB' : True, 'arg_options' : {'lambda1' : 5, 'lambda2' : 1, 'kappa1' : .4, 'kappa2' : .4, 'amp_smoothing' : 1.25}}
+                  ]
+                  
 STEPS_2 = [
     {'bg' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
     {'bg' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : 2.0}},
@@ -71,6 +75,10 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
     if input_amp is None:
         input_amp = np.zeros_like(pupil)
     init_amp = input_amp[pupil.astype(bool)]
+
+    if input_phase is None:
+        input_amp = np.zeros_like(pupil)
+    init_phase = input_phase[pupil.astype(bool)]
     
     # set up the fitter dict
     param_dict = OrderedDict({
@@ -79,7 +87,7 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
     'yk' : [yk, False],
     'zk' : [deepcopy(z0vals), False],
     'zcoeffs' : [np.zeros(z), False],
-    'point_by_point_phase' : [np.zeros(mn), False],
+    'point_by_point_phase' : [init_phase, False],
     'point_by_point_ampB' : [init_amp, False], # amplitude = 1 everywhere
     })
     
@@ -113,7 +121,7 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
             
         #print(opt_options)
         out, curdict = estimate_phase_from_measured_psfs(measured_psfs, curdict, pupil, zbasis, wavelen, z0, pupil_coords,
-                                    focal_coords, input_phase, weighting, arg_options=arg_options, options=opt_options, method=method, jac=opt_options.pop('jac',jac))
+                                    focal_coords, 0, weighting, arg_options=arg_options, options=opt_options, method=method, jac=opt_options.pop('jac',jac))
         print(out['success'])
 
     return out, curdict, param_dict_to_phase(curdict, pupil, zbasis) + input_phase, param_dict_to_amplitude(curdict, pupil)
@@ -144,7 +152,7 @@ def fft2_shiftnorm(image, axes=None):
     if axes is None:
         axes = (-2, -1)
     #return np.fft.fftshift(fft2(np.fft.ifftshift(image, axes=axes), axes=axes, norm='ortho'), axes=axes)
-    t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=4, planner_effort='FFTW_ESTIMATE', norm='ortho')
+    t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
     return np.fft.fftshift(t(),axes=axes)
     
 def ifft2_shiftnorm(image, axes=None):
@@ -152,7 +160,7 @@ def ifft2_shiftnorm(image, axes=None):
     if axes is None:
         axes = (-2, -1)
     #return np.fft.fftshift(ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, norm='ortho'), axes=axes)
-    t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=4, planner_effort='FFTW_ESTIMATE', norm='ortho')
+    t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
     return np.fft.fftshift(t(), axes=axes)
 
 def scale_and_noisify(psf, scale_factor, bg):
@@ -416,7 +424,7 @@ def obj_func(params, keys, param_dict, meas_psfs, weighting, pupil, zbasis, wave
 
         # z gradient
         if curdict['zk'][1]:
-            gradsz = get_dPhi_dzk(Ukdagger, Ukhat, pupil_coords[-1])
+            gradsz = get_dPhi_dzk(Ukdagger, Ukhat, pupil_coords[-1], wavelen)
             jaclist.append(gradsz)
 
         # zernike gradient
@@ -569,7 +577,7 @@ def get_Efdagger(Ufdagger):
 def get_Epdagger(Efdagger):
     return ifft2_shiftnorm(Efdagger)
 
-def get_dPhi_dzk(Ukdagger, Uk, r_pupil):
+def get_dPhi_dzk(Ukdagger, Uk, r_pupil, wavelen):
     '''
     Gradient of metric wrt defocus values z_k
     '''
@@ -670,12 +678,14 @@ def get_amplitude_grad(dPhi_dA, param_dict, meas_psfs, weighting, pupil, zbasis,
     
     # get Phi_1 and its jacobian
     if lambda1 != 0:
+        kappa1 = arg_options['kappa1']
         dPhi1_dB = get_dPhi1_dB(Asq, Bsq, kappa1, mn)[pupil.astype(bool)]
     else:
         dPhi1_dB = 0
         
     # get Phi_2 and its jacobian
     if lambda2 != 0:
+        kappa2 = arg_options['kappa2']
         dPhi2_dB = get_dPhi2_dB(Asq, Bsq, kappa2, mn)[pupil.astype(bool)]
     else:
         dPhi2_dB = 0
