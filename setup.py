@@ -51,8 +51,8 @@ setup(
                             'send_fits_to_shmim=magpyx.utils:console_send_fits_to_shmim',
                             'send_shmim_to_fits=magpyx.utils:console_send_shmim_to_fits',
                             'send_zeros_to_shmim=magpyx.utils:console_send_zeros_to_shmim',
-                            'pyindi_send_preset=magpyx.instrument:main',
-                            'pyindi_send_triplet=magpyx.instrument:send_indi_triplet',
+                            'pyindi_send_preset=magpyx.presets:main',
+                            'pyindi_send_triplet=magpyx.presets:send_indi_triplet',
                             'auto_focus=magpyx.focus_stage:main']
     },
     
