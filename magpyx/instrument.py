@@ -1,6 +1,6 @@
 from time import sleep
 from purepyindi import INDIClient, SwitchState
-from magpyx.utils import indi_send_and_wait
+from .utils import indi_send_and_wait
 
 def get_indi_client(port=7624):
     client = INDIClient('localhost', port)
@@ -17,7 +17,8 @@ def set_camera_roi(client, device, roi_x, roi_y, roi_h, roi_w):
     client[f'{device}.roi_set.request'] = SwitchState.ON
     sleep(2.0)
 
-def send_to_camera_preset(camstream, camdevice, roi_x, roi_y, roi_h, roi_w, stagedevice, focus_pos, exptime, ndpreset):
+def send_to_camera_preset(camstream, camdevice, roi_x, roi_y, roi_h, roi_w, stagedevice, focus_pos, exptime, ndpreset, timeout=30):
+    # close the image stream
     camstream.close()
     # set roi
     set_camera_roi(client, camdevice, roi_x, roi_y, roi_h, roi_w)
@@ -25,13 +26,14 @@ def send_to_camera_preset(camstream, camdevice, roi_x, roi_y, roi_h, roi_w, stag
     # set fwscind to pupil and move to pupil position
     indi_send_and_wait(client,
                   {f'{stagedevice}.position.target' : focus_pos,
-                   f'fwscind.filterName.{ndpreset}' : SwitchState.ON})
+                   f'fwscind.filterName.{ndpreset}' : SwitchState.ON},
+                   timeout=timeout)
     
-    # set exposure time
-    indi_send_and_wait(client, {f'{camdevice}.exptime.target' : exptime})
+    # set exposure time (this is a little dangerous in the case of impossible exposure times)
+    indi_send_and_wait(client, {f'{camdevice}.exptime.target' : exptime}, timeout=timeout)
     sleep(1)
     
-    #camstream = ImageStream(camdevice)
+    # re-open the imagestream
     camstream.open()
 
  def take_dark(camstream, client, camdevice, nimages):
@@ -40,6 +42,13 @@ def send_to_camera_preset(camstream, camdevice, roi_x, roi_y, roi_h, roi_w, stag
     dark = np.mean(camstream.grab_many(nimages),axis=0)
     client[f'{camdevice}.shutter.toggle'] = SwitchState.OFF
     return dark
+
+def take_dark_fliptip(camstream, client, nimages):
+        client[f'fliptip.position.out'] = SwitchState.ON
+        sleep(1.0)
+        dark = np.mean(camstream.grab_many(nimages),axis=0)
+        client[f'fliptip.position.in'] = SwitchState.ON
+        return dark
 
 def move_stage(client, device, position, block=True, timeout=60):
     if block:

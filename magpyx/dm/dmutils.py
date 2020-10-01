@@ -173,3 +173,20 @@ def get_distance(locyx, dm_map, dm_mask):
     idx -= locyx[1]
     distance = np.sqrt(idy**2 + idx**2)
     return map_square_to_vector(distance, dm_map, dm_mask.astype(bool))
+
+def get_grid_cmds(dm_shape, ngrid, val, do_plusminus=True):
+
+    grid_cmds = []
+    for n in range(ngrid):
+        for m in range(ngrid):
+            cmd = np.zeros(dm_shape)
+            cmd[n::ngrid,m::ngrid] = val
+            grid_cmds.append(cmd)
+    grid_cmds = np.asarray(grid_cmds)
+    
+    if do_plusminus:
+        allcmds = np.vstack([grid_cmds, -grid_cmds])
+    else:
+        allcmds = np.asarray(grid_cmds)
+
+    return allcmds
