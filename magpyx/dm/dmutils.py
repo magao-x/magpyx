@@ -126,26 +126,6 @@ def plop_down_a_mask_on_a_location(y, x, r, shape):
     mask[idx] = 1
     return mask
 
-def rms(image,mask=None):
-    return np.sqrt(np.mean(image[mask]**2))
-
-def plane(indices, piston, tip, tilt):
-    return piston + indices[1]*tip + indices[0]*tilt
-
-def plane_error(params, indices, image, mask):
-    delta = plane(indices,*params) - image
-    return delta[mask].flatten()
-
-def fit_plane(image, mask=None, indices=None):
-    if indices is None:
-        indices = np.indices(image.shape)
-    return leastsq(plane_error, [0.,0.,0.], args=(indices, image, mask))[0]
-
-def remove_plane(image, mask):
-    pcoeffs = fit_plane(image, mask=mask)
-    indices = np.indices(image.shape)
-    return (image - plane(indices, *pcoeffs))
-
 def remove_lo_from_if(image, mask, zbasis):
     im = image
     act_loc = np.where(im*mask == (im*mask).min())
@@ -157,15 +137,6 @@ def remove_lo_from_if(image, mask, zbasis):
     
     zcoeffs = zernike.opd_expand(im_planerem, aperture=tot_mask, nterms=len(zbasis), basis=get_zbasis)
     return im_planerem - zernike.opd_from_zernikes(zcoeffs, basis=get_zbasis, aperture=tot_mask, outside=0)
-
-def rescale_and_pad(image, scale_factor, pad_to):
-    rescaled = rescale(image, scale_factor, order=3)
-    shape = rescaled.shape
-    clip = lambda x: x if x > 0 else 0
-    rough_pads = ( clip((pad_to-shape[0])/2 ), clip((pad_to-shape[0])/2) )
-    padding = ((int(np.ceil(rough_pads[0])), int(np.floor(rough_pads[0]))),
-               (int(np.ceil(rough_pads[1])), int(np.floor(rough_pads[1]))))
-    return np.pad(rescaled, padding, 'constant', constant_values=0)
 
 def get_distance(locyx, dm_map, dm_mask):
     idy, idx = np.indices(dm_mask.shape)
