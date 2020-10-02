@@ -3,6 +3,7 @@ Various functions frequently used in DM analysis, closed loop, etc.
 '''
 import numpy as np
 from itertools import product
+from scipy.linalg import hadamard
 
 def get_alpao_actuator_coords(D_pupil, rotation=0, extra_scaling= (1., 1.), offset=(0,0)):
     # define (y, x) coords for actuators
@@ -73,6 +74,22 @@ def select_actuators_from_command(act_y, act_x, cmd):
     cmd_vec = map_square_to_vector(cmd, dm_map, dm_mask.astype(bool))
     order = map_square_to_vector(dm_map*cmd.astype(bool), dm_map, dm_mask.astype(bool))[cmd_vec.astype(bool)]
     return act_y[cmd_vec.astype(bool)], act_x[cmd_vec.astype(bool)], order
+
+def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
+    nact = np.count_nonzero(dm_mask)
+    if shuffle is None:
+        shuffle = slice(nact)
+    np2 = 2**int(np.ceil(np.log2(nact)))
+    print(f'Generating a {np2}x{np2} Hadamard matrix.')
+    hmat = hadamard(np2)
+    return np.roll(hmat[shuffle,:nact], roll, axis=1)
+    '''cmds = []
+    nact = np.count_nonzero(dm_mask)
+    for n in range(nact):
+        cmd = np.zeros(nact)
+        cmd[n] = 1
+        cmds.append(cmd)
+    return np.asarray(cmds)'''
 
 def find_nearest(slaved_vec_idx, slaved_map, dm_map, dm_mask, n=1):
     

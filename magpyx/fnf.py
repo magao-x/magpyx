@@ -280,22 +280,6 @@ def take_cutout(image, cutout=100, cenyx=None):
     lower = lambda x: x if x > 0 else 0
     return deepcopy(image)[lower(y-cutout//2):y+cutout//2, lower(x-cutout//2):x+cutout//2]
 
-def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
-    nact = np.count_nonzero(dm_mask)
-    if shuffle is None:
-        shuffle = slice(nact)
-    np2 = 2**int(np.ceil(np.log2(nact)))
-    print(f'Generating a {np2}x{np2} Hadamard matrix.')
-    hmat = hadamard(np2)
-    return np.roll(hmat[shuffle,:nact], roll, axis=1)
-    '''cmds = []
-    nact = np.count_nonzero(dm_mask)
-    for n in range(nact):
-        cmd = np.zeros(nact)
-        cmd[n] = 1
-        cmds.append(cmd)
-    return np.asarray(cmds)'''
-
 def cut_and_pad_image(image, cutlen=256, padlen=128):
     return pad(take_cutout(image, cutlen), padlen)
 
@@ -513,23 +497,3 @@ def fnf_closed_loop(camstream, dmstream, ifmat, cmat, slavedmap, pupil, dm_mask,
             
     except KeyboardInterrupt:
         logger.info('Caught a keyboard interrupt. Exiting F&F loop.')
-
-def map_square_to_vector(cmd_square, dm_map, dm_mask):
-    '''DM agnostic mapping function'''
-    filled_mask = dm_map != 0
-    nact = np.count_nonzero(filled_mask)
-    vec = np.zeros(nact, dtype=cmd_square.dtype)
-    
-    mapping = dm_map[dm_mask] - 1
-    vec[mapping] = cmd_square[dm_mask]
-    return vec
-
-def map_vector_to_square(cmd_vec, dm_map, dm_mask):
-    '''DM agnostic mapping function'''
-    filled_mask = dm_map != 0
-    sq = np.zeros(dm_map.shape, dtype=cmd_vec.dtype)
-    
-    mapping = dm_map[filled_mask] - 1
-    sq[filled_mask] = cmd_vec[mapping]
-    sq *= dm_mask
-    return sq
