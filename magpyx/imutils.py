@@ -33,14 +33,35 @@ def rescale_and_pad(image, scale_factor, pad_to):
                (int(np.ceil(rough_pads[1])), int(np.floor(rough_pads[1]))))
     return np.pad(rescaled, padding, 'constant', constant_values=0)
 
-def register_images(imlist, sliceyx=None):
+def register_images(imlist, sliceyx=None, upsample=1):
+    if sliceyx is None:
+        sliceyx = (slice(None), slice(None))
     # reference to first image in stack
     imref_full = imlist[0]
     imref = imref_full[sliceyx]   
     imreglist = []
     for im in imlist:
         # find shift
-        shiftyx, error, diffphase = register_translation(imref, im[sliceyx], 10)
+        shiftyx, error, diffphase = register_translation(imref, im[sliceyx], upsample)
         # shift to reference
         imreglist.append( shift(im[sliceyx], shiftyx) ) 
     return imreglist
+
+def get_gauss(sigma, shape, cenyx=None, xp=np):
+    if cenyx is None:
+        cenyx = xp.asarray([(shape[0])/2., (shape[1])/2.]) # no -1
+    yy, xx = xp.indices(shape) - cenyx[:,None,None]
+    g = xp.exp(-0.5*(yy**2+xx**2)/sigma**2)
+    return g / xp.sum(g)
+
+def convolve_fft(in1, in2, force_real=False):
+    out = ifft2_shiftnorm(fft2_shiftnorm(in1,norm=None)*fft2_shiftnorm(in2,norm=None),norm=None)
+    if force_real:
+        return out.real
+    else:
+        return out
+    
+def gauss_convolve(image, sigma, force_real=True):
+    xp = cp.get_array_module(image)
+    g = get_gauss(sigma, image.shape, xp=xp)
+    return convolve_fft(image, g, force_real=force_real)

@@ -791,100 +791,39 @@ def Gammaprime(x, kappa):
     out[absx > 3*kappa]  = 0
     return out
 
-def command_stage(client, indi_triplet, value):
-    command_dict = {indi_triplet : value}
-    indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout = 60)
-
-def measure_defocused_psfs(camstream, defocus_pos, focus_pos, nimages):
-    #dmstream.write(np.zeros((32,32)).astype(dmstream.buffer.dtype))
-    images = []
-    # positive values
-    camstream.semflush(camstream.semindex)
-    for pos in defocus_pos:
-        #dmstream.write(cmd.astype(dmstream.buffer.dtype))
-        command_stage(client, 'stagesci2.position.target', pos)
-        camstream.semwait(camstream.semindex)
-        sleep(0.1)
-        images.append(np.mean(camstream.grab_many(nimages), axis=0))
-    #dmstream.write(np.zeros((32,32)).astype(dmstream.buffer.dtype))
-    command_stage(client, 'stagesci2.position.target', focus_pos)
-    return images
-
-def get_gauss(sigma, shape, cenyx=None, xp=np):
-    if cenyx is None:
-        cenyx = xp.asarray([(shape[0])/2., (shape[1])/2.]) # no -1
-    yy, xx = xp.indices(shape) - cenyx[:,None,None]
-    g = xp.exp(-0.5*(yy**2+xx**2)/sigma**2)
-    return g / xp.sum(g)
-
-def convolve_fft(in1, in2, force_real=False):
-    out = ifft2_shiftnorm(fft2_shiftnorm(in1,norm=None)*fft2_shiftnorm(in2,norm=None),norm=None)
-    if force_real:
-        return out.real
-    else:
-        return out
-    
-def gauss_convolve(image, sigma, force_real=True):
-    xp = cp.get_array_module(image)
-    g = get_gauss(sigma, image.shape, xp=xp)
-    #if xp.all(xp.isreal(image)):
-    #    force_real = True
-    #else:
-    #    force_real = False
-    return convolve_fft(image, g, force_real=force_real)
-
-
-def measure_defocused_psfs(camstream, dmstream, defocus_pos, focus_pos, allcmds, nimages, dark=None, cut_to=None, zero_dm=True):
+def measure_defocused_psfs(camstream, dmstream, camstage, defocus_positions, nimages, final_position=None, dm_cmds=None, zero_dm=True, delay=None):
     dm_shape = dmstream.grab_latest().shape
+    dm_type = dmstream.buffer.dtype
+    
+    # zero out the DM if requested
     if zero_dm:
-        dmstream.write(np.zeros(dm_shape).astype(dmstream.buffer.dtype))
-    # commands with defocused vals
-    if camstream.semindex is None:
-        camstream.semindex = camstream.getsemwaitindex(1)
-    camstream.semflush(camstream.semindex)
+        dmstream.write(np.zeros(dm_shape).astype(dm_type))
+
     allims = []
     for j, pos in enumerate(defocus_pos):
         print(f'Moving to focus position {j+1}')
-        phase_retrieval.command_stage(client, 'stagesci2.position.target', pos)
+                                
+        # block until stage is in position
+        instrument.move_stage(client, camstage, pos, block=True)
+
+        # loop over DM commands, and take measurements
         curims = []
-        for cmd in allcmds:
-            dmstream.write(cmd.astype(dmstream.buffer.dtype))
-            sleep(0.1)
-            camstream.semwait(camstream.semindex)
-            im = measure_register_mean(camstream, nimages, cut_to=cut_to, dark=dark)
+        if dm_cmds is None:
+            dm_cmds = [np.zeros(dm_shape, dtype=dm_type),]
+        for cmd in dm_cmds:
+            dmstream.write(cmd.astype(dm_type))
+            if delay is not None:
+                sleep(delay)
+            imlist = camstream.grab_many(nimages)
             curims.append(im)
-        allims.append(curims)         
+        allims.append(curims)      
+        
     # restore
     if zero_dm:
         dmstream.write(np.zeros(dm_shape).astype(dmstream.buffer.dtype))
-    #phase_diversity.command_stage(client, 'stagesci2.position.target', focus_pos)
-    return np.asarray(allims)
-
-def measure_defocused_psfs_dmdefocus(camstream, dmstream, dmstream_defocus, defocus_cmds, allcmds, nimages, dark=None, cut_to=None, zero_dm=True, sliceyx=None):
-    if zero_dm:
-        dmstream.write(np.zeros((11,11)).astype(dmstream.buffer.dtype))
-    # commands with defocused vals
-    if camstream.semindex is None:
-        camstream.semindex = camstream.getsemwaitindex(1)
-    camstream.semflush(camstream.semindex)
-    allims = []
-    for j, pos in enumerate(defocus_cmds):
-        print(f'Moving to focus position {j+1}')
-        dmstream_defocus.write(pos.astype(dmstream_defocus.buffer.dtype))
-        curims = []
-        for cmd in allcmds:
-            dmstream.write(cmd.astype(dmstream.buffer.dtype))
-            sleep(0.1)
-            camstream.semwait(camstream.semindex)
-            im = measure_register_mean(camstream, nimages, dark=dark, sliceyx=sliceyx)
-            curims.append(im)
-        allims.append(curims)         
-    # restore
-    if zero_dm:
-        dmstream.write(np.zeros((11,11)).astype(dmstream.buffer.dtype))
-    dmstream_defocus.write(np.zeros((11,11)).astype(dmstream_defocus.buffer.dtype))
-    #phase_diversity.command_stage(client, 'stagesci2.position.target', focus_pos)
-    return np.asarray(allims)
+    if final_position is not None:
+        phase_diversity.move_stage(client, camstage, final_position, block=False)
+    return np.squeeze(allims)
 
 def process_phase_retrieval(pupil_region, z0vals, zbasis, wavelen, f, pupil_coords, focal_coords, pupil_rescaled, psfs, input_phase=None, xk_in=None, yk_in=None, gpu=False):
         
