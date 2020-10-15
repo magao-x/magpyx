@@ -1,5 +1,6 @@
-
 import numpy as np
+import cupy as cp
+import pyfftw
 from scipy.optimize import leastsq
 from skimage.feature import register_translation
 from scipy.ndimage import shift
@@ -65,3 +66,22 @@ def gauss_convolve(image, sigma, force_real=True):
     xp = cp.get_array_module(image)
     g = get_gauss(sigma, image.shape, xp=xp)
     return convolve_fft(image, g, force_real=force_real)
+
+def fft2_shiftnorm(image, axes=None, norm='ortho'):
+    if axes is None:
+        axes = (-2, -1)
+    if isinstance(image, np.ndarray):
+        t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
+        return np.fft.fftshift(t(),axes=axes)
+    else:
+        return cp.fft.fftshift(cp.fft.fft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+    
+def ifft2_shiftnorm(image, axes=None, norm='ortho'):
+    if axes is None:
+        axes = (-2, -1)
+    if isinstance(image, np.ndarray):
+        t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
+        return np.fft.fftshift(t(), axes=axes)
+    else:
+        return cp.fft.fftshift(cp.fft.ifft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+

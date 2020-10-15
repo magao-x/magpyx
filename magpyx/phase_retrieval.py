@@ -27,6 +27,7 @@ from functools import partial
 from scipy.optimize import minimize
 #from numpy.lib.scimath import sqrt as csqrt
 from scipy.optimize import minimize, leastsq
+from scipy.ndimage import center_of_mass
 from scipy.ndimage.filters import gaussian_filter
 from skimage.filters import threshold_otsu
 
@@ -41,6 +42,7 @@ from time import sleep
 import pyfftw
 
 from .utils import ImageStream, indi_send_and_wait
+from .imutils import gauss_convolve, fft2_shiftnorm, ifft2_shiftnorm
 
 DEFAULT_STEPS = [
     {'bg' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
@@ -154,7 +156,12 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
         pupil = cp.asnumpy(pupil)
         zbasis = cp.asnumpy(zbasis)
 
-    return out, curdict, param_dict_to_phase(curdict, pupil, zbasis) + input_phase, param_dict_to_amplitude(curdict, pupil)
+    # collect all the quantities to pass back
+    total_phase = param_dict_to_phase(curdict, pupil, zbasis) + input_phase
+    total_amp = param_dict_to_amplitude(curdict, pupil)
+    sim_psf, Efocal, Epupil = simulate_psf(total_amp, total_phase, wavelen, z0, pupil_coords, focal_coords, to_focal_plane=True)
+
+    return out, curdict, total_phase, total_amp, Epupil, Efocal, sim_psf
 
 def get_magaox_pupil(npix, rotation=38.75, pupil_diam=6.5, support_width=0.01905, grid_size=6.5, sm=True, sm_scale=1, primary_scale=1):
     #pupil_diam = 6.5 #m
@@ -177,24 +184,6 @@ def get_magaox_pupil(npix, rotation=38.75, pupil_diam=6.5, support_width=0.01905
 def cexp(arr):
     xp = cp.get_array_module(arr)
     return xp.cos(arr) + 1j*xp.sin(arr)
-
-def fft2_shiftnorm(image, axes=None, norm='ortho'):
-    if axes is None:
-        axes = (-2, -1)
-    if isinstance(image, np.ndarray):
-        t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
-        return np.fft.fftshift(t(),axes=axes)
-    else:
-        return cp.fft.fftshift(cp.fft.fft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
-    
-def ifft2_shiftnorm(image, axes=None, norm='ortho'):
-    if axes is None:
-        axes = (-2, -1)
-    if isinstance(image, np.ndarray):
-        t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
-        return np.fft.fftshift(t(), axes=axes)
-    else:
-        return cp.fft.fftshift(cp.fft.ifft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
 
 def scale_and_noisify(psf, scale_factor, bg):
     psf_scaled = psf * scale_factor + bg
@@ -361,6 +350,12 @@ def get_coords(N, scale, xp=np):
     cy, cx = (xp.indices((N,N)) - N/2.) * scale
     r = xp.sqrt(cy**2 + cx**2)
     return [cy, cx, r]
+
+def center_of_mass(image):
+    xp = cp.get_array_module(image)
+    
+    indices = xp.indices(image.shape)
+    return xp.average(indices[0], axis=None, weights=image), xp.average(indices[1], axis=None, weights=image)
 
 def get_Gkhat(pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phase, curdict):
     # simulate PSFs from parameters
@@ -828,6 +823,7 @@ def measure_defocused_psfs(camstream, dmstream, camstage, defocus_positions, nim
 def process_phase_retrieval(pupil_region, z0vals, zbasis, wavelen, f, pupil_coords, focal_coords, pupil_rescaled, psfs, input_phase=None, xk_in=None, yk_in=None, gpu=False):
         
     weights = np.ones_like(psfs)
+    N = psfs.shape[-1] # I'm assuming these are square images
     
     if input_phase is not None:
         input_phase = np.array(input_phase)
@@ -875,14 +871,14 @@ def process_phase_retrieval(pupil_region, z0vals, zbasis, wavelen, f, pupil_coor
         # phase: pixel
         {'bg' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : smooth_as_butter}, 'opt_options' : opt_options},
         # amplitude: pixel
-        {'bg' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : None}, 'opt_options' : opt_options},
+        {'bg' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : opt_options},
         # lateral + axial + phase (pixel) + amplitude (pixel)
-        {'bg' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : None}, 'opt_options' : opt_options},
+        {'bg' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : opt_options},
 
     ]
     
 
-    out_final, param_dict, est_phase, est_amp = phase_retrieval.multi_step_fit(psfs, pupil_region, z0vals, zbasis, wavelen, f, weights,
+    out_final, param_dict, est_phase, est_amp, est_Epupil, est_Efocal, est_psf = multi_step_fit(psfs, pupil_region, z0vals, zbasis, wavelen, f, weights,
                                                       pupil_coords, focal_coords, input_phase=input_phase, input_amp=pupil_rescaled*pupil_region, xk=xk_in, yk=yk_in, jac=True, steps=STEPS, gpu=gpu)
     
-    return est_amp, est_phase, out_final['fun'], param_dict
+    return est_amp, est_phase, est_Epupil, est_Efocal, est_psf, out_final['fun'], param_dict
