@@ -1,5 +1,10 @@
 import numpy as np
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    print('Could not import cupy. You may be missing funcionality.')
+    cp = None
+
 import pyfftw
 from scipy.optimize import leastsq
 from skimage.feature import register_translation
@@ -63,7 +68,10 @@ def convolve_fft(in1, in2, force_real=False):
         return out
     
 def gauss_convolve(image, sigma, force_real=True):
-    xp = cp.get_array_module(image)
+    if cp is not None:
+        xp = cp.get_array_module(image)
+    else:
+        xp = np
     g = get_gauss(sigma, image.shape, xp=xp)
     return convolve_fft(image, g, force_real=force_real)
 

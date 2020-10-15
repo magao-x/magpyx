@@ -14,7 +14,11 @@ Exploration:
 '''
 
 import numpy as np
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    print('Could not import cupy. You may be missing funcionality.')
+    cp = None
 
 import poppy
 import astropy.units as u
