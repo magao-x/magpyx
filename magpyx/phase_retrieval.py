@@ -17,7 +17,7 @@ import numpy as np
 try:
     import cupy as cp
 except ImportError:
-    print('Could not import cupy. You may be missing funcionality.')
+    print('Could not import cupy. You may lose functionality.')
     cp = None
 
 import poppy
@@ -45,7 +45,6 @@ from time import sleep
 #from numpy.fft import fft2, ifft2
 import pyfftw
 
-from .utils import ImageStream, indi_send_and_wait
 from .imutils import gauss_convolve, fft2_shiftnorm, ifft2_shiftnorm
 
 DEFAULT_STEPS = [
@@ -78,6 +77,13 @@ STEPS_2 = [
 ]
 
 DEFAULT_OPTIONS = {'gtol':1e-6, 'maxcor':1000, 'maxls' : 100, 'ftol' : 1e-8, 'eps' : 1e-12}
+
+
+def get_array_module(arr):
+    if cp is not None:
+        return cp.get_array_module(cp)
+    else:
+        return np
 
 def get_median(image, axis=None):
     if isinstance(image, cp.core.ndarray):
@@ -186,7 +192,7 @@ def get_magaox_pupil(npix, rotation=38.75, pupil_diam=6.5, support_width=0.01905
     return pupil, sampled
 
 def cexp(arr):
-    xp = cp.get_array_module(arr)
+    xp = get_array_module(arr)
     return xp.cos(arr) + 1j*xp.sin(arr)
 
 def scale_and_noisify(psf, scale_factor, bg):
@@ -221,7 +227,7 @@ def shift_to_centroid(im, shiftyx=None, order=3):
     return shift(im, shiftyx, order=1, cval=median)
 
 def shift_via_fourier(image, xk, yk, force_real=False,):
-    xp = cp.get_array_module(image)
+    xp = get_array_module(image)
     out =  ifft2_shiftnorm(fft2_shiftnorm(image)*my_fourier_shift(xk, yk, image.shape, xp=xp))
     if force_real:
         return out.real
@@ -251,7 +257,7 @@ def normalize_psf(image):
     return image / np.sum(image)
 
 def get_free_space_tf(z, wavelen, rcoords):
-    xp = cp.get_array_module(rcoords)
+    xp = get_array_module(rcoords)
     pi = np.pi
     #tf =  ne.evaluate('exp(1j*2*pi * z * sqrt(1/wavelen**2 - rcoords**2))')
     #tf = np.exp(1j*2*np.pi * z * csqrt(1/wavelen**2 - rcoords**2))
@@ -293,7 +299,7 @@ def fresnel_propagate(Efield, wavelen, rcoord1, rcoord2, z0, to_focal_plane=Fals
 
 def get_sim_psfs(pupil, zbasis, bg, defocus_values, wavelen, f, pupil_coords, focal_coords, zcoeffs=None, pcoeffs=None, bcoeffs=None, static_phase=0, to_focal_plane=False):
     # Fresnel propagate from pupil to paraxial focus
-    xp = cp.get_array_module(pupil)
+    xp = get_array_module(pupil)
     incoh_psf_focus, Efocus, Epupil = simulate_from_coeffs(pupil, zbasis, wavelen, f, pupil_coords, focal_coords,
                                                            zcoeffs=zcoeffs, pcoeffs=pcoeffs, bcoeffs=bcoeffs,
                                                            static_phase=static_phase, to_focal_plane=to_focal_plane)
@@ -318,7 +324,7 @@ def fraunhofer_simulate_psf(pupil, scale_factor, bg, phase, add_noise=True):
     return psf_out
 
 def simulate_psf(pupil, phase, wavelen, focal_length, coords1, coords2, to_focal_plane=False):
-    xp = cp.get_array_module(pupil)
+    xp = get_array_module(pupil)
     Epupil = pupil * cexp(phase)#np.exp(1j*phase) #ne.evaluate('pupil * exp(1j*phase)')
     norm = xp.sqrt(xp.sum(Epupil * Epupil.conj()).real)
     Epupil /= norm
@@ -326,7 +332,7 @@ def simulate_psf(pupil, phase, wavelen, focal_length, coords1, coords2, to_focal
     return xp.abs(Efocal)**2, Efocal, Epupil #incoherent and coherent psf
 
 def simulate_from_coeffs(pupil, zbasis, wavelen, focal_length, coords1, coords2, zcoeffs=None, pcoeffs=None, bcoeffs=None, static_phase=0, to_focal_plane=False):
-    xp = cp.get_array_module(pupil)
+    xp = get_array_module(pupil)
     phase = xp.zeros(pupil.shape)
     amplitude = xp.zeros(pupil.shape)
     if zcoeffs is not None: # zernike coeffs
@@ -356,14 +362,14 @@ def get_coords(N, scale, xp=np):
     return [cy, cx, r]
 
 def center_of_mass(image):
-    xp = cp.get_array_module(image)
+    xp = get_array_module(image)
     
     indices = xp.indices(image.shape)
     return xp.average(indices[0], axis=None, weights=image), xp.average(indices[1], axis=None, weights=image)
 
 def get_Gkhat(pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phase, curdict):
     # simulate PSFs from parameters
-    xp = cp.get_array_module(pupil)
+    xp = get_array_module(pupil)
     Ikhat, Ekhat, Ukhat, Ephat = get_sim_psfs(pupil, zbasis, 0, curdict['zk'][0], wavelen, f, pupil_coords, focal_coords,
                                                       zcoeffs=curdict['zcoeffs'][0],
                                                       bcoeffs=curdict['point_by_point_ampB'][0],
@@ -376,15 +382,15 @@ def get_Gkhat(pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phas
     fkhat = fft2_shiftnorm(Ikhat, axes=(1,2)) # DFT of Ikhat
     pixel_coords =  get_coords(shape[0], 1, xp=xp) 
     Hk = xp.asarray([my_fourier_shift(yk, xk, shape, xp=xp, coords=pixel_coords) for (xk, yk) in zip(curdict['xk'][0], curdict['yk'][0])])
-    #Hd = get_Hd(Ikhat[0].shape[0])
-    gkhat = fkhat * Hk #* Hd
+    Hd = get_Hd(Ikhat[0].shape[0])
+    gkhat = fkhat * Hk * Hd
     Gkhat = ifft2_shiftnorm(gkhat, axes=(1,2)).real # modeled PSF
     
     return Ikhat, Ekhat, Ukhat, Ephat, Gkhat, gkhat, Hk, fkhat
 
 def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weighting, pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phase, arg_options, jac, return_all_the_things=False):
     
-    xp = cp.get_array_module(meas_psfs)
+    xp = get_array_module(meas_psfs)
     # copy the param_dict and update it with the fit parameters, as needed
     # here we also do the conversion from CPU to GPU memory if needed
     curdict = deepcopy(param_dict)
@@ -553,7 +559,7 @@ def get_Hd(N):
 
 def get_Phi(weighting, meas_psfs, sim_psfs):
     # objective func
-    xp = cp.get_array_module(meas_psfs)
+    xp = get_array_module(meas_psfs)
     t1 = xp.sum(weighting*meas_psfs*sim_psfs, axis=(1,2))**2
     t2 = xp.sum(weighting*meas_psfs**2, axis=(1,2))
     t3 = xp.sum(weighting*sim_psfs**2, axis=(1,2))
@@ -565,7 +571,7 @@ def get_dPhi_dGkhat(W, Ghat, G):
     Ghat = esimated psfs
     G = measured psfs
     '''
-    xp = cp.get_array_module(G)
+    xp = get_array_module(G)
     K = W.shape[0]
     
     WGhatG = xp.sum(W*Ghat*G, axis=(1,2))[:, xp.newaxis, xp.newaxis]
@@ -580,8 +586,8 @@ def get_gkdagger(dPhi_dGkhat):
 def get_fkdagger(gkdagger, shifts):
     # maybe need to revist pixel and coordinate transfer functions
     #shifts = np.asarray([my_fourier_shift(-y,-x, shape) for (x,y) in zip(xk,yk)])
-    #Hd = get_Hd(shifts[0].shape[0])
-    return gkdagger * shifts.conj() #* Hd.conj()
+    Hd = get_Hd(shifts[0].shape[0])
+    return gkdagger * shifts.conj() * Hd.conj()
 
 def get_dPhi_dIk(fkdagger):
     return ifft2_shiftnorm(fkdagger, axes=(1,2))# depends on fkdagger
@@ -593,7 +599,7 @@ def get_Ukdagger(Ekdagger):
     return fft2_shiftnorm(Ekdagger, axes=(1,2))
 
 def get_Ufdagger(Ukdagger, zkhat, wavelen, r_pupil):
-    xp = cp.get_array_module(Ukdagger)
+    xp = get_array_module(Ukdagger)
     tf = get_free_space_tf(zkhat, wavelen, r_pupil)#np.asarray([get_free_space_tf(z, wavelen, r_pupil) for z in zkhat])
     return xp.sum( Ukdagger * tf.conj(), axis=0)
 
@@ -607,7 +613,7 @@ def get_dPhi_dzk(Ukdagger, Uk, r_pupil, wavelen):
     '''
     Gradient of metric wrt defocus values z_k
     '''
-    xp = cp.get_array_module(Ukdagger)
+    xp = get_array_module(Ukdagger)
     pi = xp.pi
     #tf = ne.evaluate('2*pi * sqrt(1/wavelen**2 - r_pupil**2)') #2*np.pi* csqrt(1./wavelen**2 - rfreq)
     tf = 2*pi * xp.sqrt(1/wavelen**2 - r_pupil**2 + 0j)
@@ -640,7 +646,7 @@ def get_dPhi_dxk(gkdagger, gkhat, N):
     Gradient of metric wrt x shift
     '''
     #idx = np.indices((N,N))[1] - N/2.
-    xp = cp.get_array_module(gkdagger)
+    xp = get_array_module(gkdagger)
     idy, idx, r = get_coords(N, 1, xp)
     return - xp.imag(xp.sum(2*xp.pi*idx/N * gkdagger*gkhat.conj(), axis=(1,2)))
 
@@ -648,7 +654,7 @@ def get_dPhi_dyk(gkdagger, gkhat, N):
     '''
     Gradient of metric wrt y shift
     '''
-    xp = cp.get_array_module(gkdagger)
+    xp = get_array_module(gkdagger)
     idy, idx, r = get_coords(N, 1, xp)
     return - xp.imag(xp.sum(2*xp.pi*idy/N * gkdagger*gkhat.conj(), axis=(1,2))) 
                  
@@ -660,27 +666,27 @@ def get_dPhi_dA(Epdagger, phi_hat, smoothing=None):
     return out
 
 def get_dPhi_dAzcoeff(Epdagger, phi_hat, zbasis):
-    xp = cp.get_array_module(Epdagger)
+    xp = get_array_module(Epdagger)
     return xp.real( xp.sum(zbasis * Epdagger * cexp(-1*phi_hat), axis=(1,2)) )
 
 def amplitude_from_B(B, mn):
     #mn = np.count_nonzero(pupil)
-    xp = cp.get_array_module(B)
+    xp = get_array_module(B)
     return mn*xp.abs(B)/xp.sum(xp.abs(B))
 
 def get_dPhi_dB(dPhi_dA, A, B, mn):
-    xp = cp.get_array_module(dPhi_dA)
+    xp = get_array_module(dPhi_dA)
     return xp.sign(B) / xp.sum(xp.abs(B)) * ( mn*dPhi_dA - xp.sum(dPhi_dA*A) )
 
 def param_dict_to_phase(param_dict, pupil, zbasis):
-    xp = cp.get_array_module(pupil)
+    xp = get_array_module(pupil)
     phase = xp.zeros(pupil.shape)
     phase[pupil] = param_dict['point_by_point_phase'][0] # output point-by-point
     phase += xp.einsum('i,ijk->jk', param_dict['zcoeffs'][0], zbasis) #np.sum(param_dict['zcoeffs'][0][:,None,None]*zbasis,axis=0) # input zernikes
     return phase
 
 def param_dict_to_amplitude(param_dict, pupil):
-    xp = cp.get_array_module(pupil)
+    xp = get_array_module(pupil)
     amplitude = xp.zeros(pupil.shape)
     amplitude[pupil] = amplitude_from_B(param_dict['point_by_point_ampB'][0], xp.count_nonzero(pupil)) # output point-by-point
     return amplitude
@@ -698,7 +704,7 @@ def param_dict_to_amplitude(param_dict, pupil):
 
 def get_amplitude_grad(dPhi_dA, param_dict, meas_psfs, weighting, pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phase, arg_options):
     
-    xp = cp.get_array_module(dPhi_dA)
+    xp = get_array_module(dPhi_dA)
     # get weighting
     lambda1 = arg_options.get('lambda1', 0)
     lambda2 = arg_options.get('lambda2', 0)
@@ -732,7 +738,7 @@ def get_amplitude_grad(dPhi_dA, param_dict, meas_psfs, weighting, pupil, zbasis,
         
 def obj_phi1(B, pupil, kappa1, mn):
     #mn = np.count_nonzero(pupil) #pupil.shape[0] * pupil.shape[1]
-    xp = cp.get_array_module(B)
+    xp = get_array_module(B)
     Bsq = xp.zeros(pupil.shape)
     Bsq[pupil] = B
     A = amplitude_from_B(Bsq, mn)
@@ -740,18 +746,18 @@ def obj_phi1(B, pupil, kappa1, mn):
 
 def obj_phi2(B, pupil, kappa2, mn):
     #mn = np.count_nonzero(pupil) #pupil.shape[0] * pupil.shape[1]
-    xp = cp.get_array_module(B)
+    xp = get_array_module(B)
     Bsq = xp.zeros(pupil.shape)
     Bsq[pupil] = B
     A = amplitude_from_B(Bsq, mn)
     return get_Phi2(A, kappa2, mn)#, get_dPhi2_dB(A, Bsq, kappa2, mn)[pupil.astype(bool)]
 
 def get_Phi1(A, kappa1, mn):
-    xp = cp.get_array_module(A)
+    xp = get_array_module(A)
     return 1./mn * xp.sum(Gamma(A, kappa1))
 
 def get_Phi2(A, kappa2, mn):
-    xp = cp.get_array_module(A)
+    xp = get_array_module(A)
     shifts = [(0,1), (1,0), (1,1), (1,-1)] # these could be backwards
     Arolls = xp.asarray([np.roll(A, sh, axis=(0,1)) for sh in shifts])
     return 1./mn * xp.sum(Gamma(A - Arolls, kappa2))
@@ -760,7 +766,7 @@ def get_dPhi1_dA(A, kappa1, mn):
     return 1./mn * Gammaprime(A, kappa1)
 
 def get_dPhi2_dA(A, kappa2, mn):
-    xp = cp.get_array_module(A)
+    xp = get_array_module(A)
     shifts = [(0,1), (1,0), (1,1), (1,-1)]
     Arolls = xp.asarray([xp.roll(A, sh, axis=(0,1)) for sh in shifts])
     Arollsneg = xp.asarray([xp.roll(A, (-sh[0], -sh[1]), axis=(0,1)) for sh in shifts])
@@ -775,7 +781,7 @@ def get_dPhi2_dB(A, B, kappa2, mn):
     return get_dPhi_dB(dPhi2_dA, A, B, mn)
 
 def Gamma(x, kappa):
-    xp = cp.get_array_module(x)
+    xp = get_array_module(x)
     absx = xp.abs(x)
     out = xp.zeros_like(x)
     out = 2/(3*kappa**2)*absx**2 - 8/(27*kappa**3)*absx**3 + 1./(27*kappa**4)*absx**4
@@ -783,7 +789,7 @@ def Gamma(x, kappa):
     return out
 
 def Gammaprime(x, kappa):
-    xp = cp.get_array_module(x)
+    xp = get_array_module(x)
     absx = xp.abs(x)
     out = xp.zeros_like(x)
     out = xp.sign(x) * (4/(3*kappa**2)*absx - 8/(9*kappa**3)*absx**2 + 4./(27*kappa**4)*absx**3)

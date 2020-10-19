@@ -2,7 +2,7 @@ import numpy as np
 try:
     import cupy as cp
 except ImportError:
-    print('Could not import cupy. You may be missing funcionality.')
+    print('Could not import cupy. You may lose functionality.')
     cp = None
 
 import pyfftw
