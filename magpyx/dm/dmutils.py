@@ -4,6 +4,8 @@ Various functions frequently used in DM analysis, closed loop, etc.
 import numpy as np
 from itertools import product
 from scipy.linalg import hadamard
+from skimage import draw
+from ..imutils import rot_matrix, rotate
 
 def get_alpao_actuator_coords(D_pupil, rotation=0, extra_scaling= (1., 1.), offset=(0,0)):
     # define (y, x) coords for actuators
@@ -66,7 +68,7 @@ def map_vector_to_square(cmd_vec, dm_map, dm_mask):
     sq *= dm_mask
     return sq
 
-def select_actuators_from_command(act_y, act_x, cmd):
+def select_actuators_from_command(act_y, act_x, cmd, dm_map, dm_mask):
     '''
     Given a (binary) command, return the actuator positions
     this corresponds to

@@ -71,7 +71,7 @@ def fft2_shiftnorm(image, axes=None, norm='ortho'):
     if axes is None:
         axes = (-2, -1)
     if isinstance(image, np.ndarray):
-        t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
+        t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
         return np.fft.fftshift(t(),axes=axes)
     else:
         return cp.fft.fftshift(cp.fft.fft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
@@ -80,8 +80,17 @@ def ifft2_shiftnorm(image, axes=None, norm='ortho'):
     if axes is None:
         axes = (-2, -1)
     if isinstance(image, np.ndarray):
-        t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm='ortho')
+        t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
         return np.fft.fftshift(t(), axes=axes)
     else:
         return cp.fft.fftshift(cp.fft.ifft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+
+def rot_matrix(angle_rad, y=0, x=0):
+    # rotation about the origin
+    cos = np.cos(angle_rad)
+    sin = np.sin(angle_rad)
+    return np.asarray([[cos, sin, -y*cos-x*sin+y], [-sin, cos, y*sin-x*cos+x]]).T
+
+def rotate(cy, cx, angle, ceny=0, cenx=0):
+    return np.dot(rot_matrix(np.deg2rad(angle), y=ceny, x=cenx).T, np.asarray([cy, cx, np.ones(len(cy))]))
 
