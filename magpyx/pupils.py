@@ -9,15 +9,7 @@ To do:
 
 import numpy as np
 from skimage import draw
-
-def rot_matrix(angle_rad, y=0, x=0):
-    # rotation about the origin
-    cos = np.cos(angle_rad)
-    sin = np.sin(angle_rad)
-    return np.asarray([[cos, sin, -y*cos-x*sin+y], [-sin, cos, y*sin-x*cos+x]]).T
-
-def rotate(cy, cx, angle, ceny=0, cenx=0):
-    return np.dot(rot_matrix(np.deg2rad(angle), y=ceny, x=cenx).T, np.asarray([cy, cx, np.ones(len(cy))]))
+from .imutils import rot_matrix, rotate
 
 def get_coronagraphic_pupil(delta_phys, N, extra_rot=0):
     '''
