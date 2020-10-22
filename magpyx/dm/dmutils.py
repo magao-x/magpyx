@@ -6,6 +6,7 @@ from itertools import product
 from scipy.linalg import hadamard
 from skimage import draw
 from ..imutils import rot_matrix, rotate
+from .t2w_offload import pseudoinverse_svd
 
 def get_alpao_actuator_coords(D_pupil, rotation=0, extra_scaling= (1., 1.), offset=(0,0)):
     # define (y, x) coords for actuators
@@ -95,6 +96,7 @@ def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
 
 def find_nearest(slaved_vec_idx, slaved_map, dm_map, dm_mask, n=1):
     
+    shape = dm_map.shape
     # loop over slaved actuators
     neighbors = []
     for idx in slaved_vec_idx:
@@ -106,7 +108,7 @@ def find_nearest(slaved_vec_idx, slaved_map, dm_map, dm_mask, n=1):
         actyx = np.squeeze(np.where(map0.astype(bool)))
     
         # for each, get a distance map
-        indices = np.indices((50,50))
+        indices = np.indices(shape)
         indices[0] -= actyx[0]
         indices[1] -= actyx[1]
         
@@ -119,19 +121,21 @@ def find_nearest(slaved_vec_idx, slaved_map, dm_map, dm_mask, n=1):
 
     return neighbors
 
-def get_slave_map(ifmat, threshold, dm_mask, map_vec_to_square_func, map_square_to_vec_func):
+def get_slave_map(ifmat, threshold, dm_map, dm_mask):
+
+    dm_mask = dm_mask.astype(bool)
     
     if_rms = np.sqrt(np.mean(ifmat**2,axis=(1)))
-    bad = map_vec_to_square_func(if_rms) < threshold
+    bad = map_vector_to_square(if_rms, dm_map, dm_mask) < threshold
     slaved = bad & dm_mask
 
-    slaved_vec = map_vec_to_square_func(slaved)
-    good_vec = map_square_to_vec_func(~slaved)
+    slaved_vec = map_square_to_vector(slaved, dm_map, dm_mask)
+    good_vec = map_square_to_vector(~slaved, dm_map, dm_mask)
     slaved_vec_idx = np.where(slaved_vec)[0]
 
     ifs_good = ifmat[good_vec]
     
-    return slaved_vec, slaved_vec_idx, slaved, ifs_good
+    return slaved_vec, slaved_vec_idx, slaved, ifs_good, if_rms
 
 def fill_in_slaved_cmds(cmd_vec, slaved_vec_idx, neighbor_mapping):
     cmd = cmd_vec.copy()
@@ -180,3 +184,7 @@ def get_grid_cmds(dm_shape, ngrid, val, do_plusminus=True):
         allcmds = np.asarray(grid_cmds)
 
     return allcmds
+
+def get_cmat(ifmat, n_threshold=50):
+    cmat, threshold, U, s, Vh = pseudoinverse_svd(ifmat, n_threshold=n_threshold)
+    return cmat

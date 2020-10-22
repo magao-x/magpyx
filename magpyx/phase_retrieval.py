@@ -12,7 +12,6 @@ Exploration:
 * Can you get away with 3 or 4 measurements?
 * Can you get away with 32-bit accuracy? (modest speedup)
 '''
-
 import numpy as np
 try:
     import cupy as cp
@@ -46,12 +45,57 @@ from time import sleep
 import pyfftw
 
 from .utils import ImageStream, indi_send_and_wait
-from .imutils import gauss_convolve, get_gauss, fft2_shiftnorm, ifft2_shiftnorm
+from .instrument import move_stage
+from .imutils import gauss_convolve, get_gauss, fft2_shiftnorm, ifft2_shiftnorm, register_images
+
+
+DEFAULT_OPTIONS = {'gtol' : 1e-6, 'ftol' : 1e-8}
+
+rough_rough_smooth = 5
+rough_smooth = 3 #1.75 #3
+fine_smooth = 0.75 # 1.5
+smooth_as_butter = 0.3
+
+DEFAULT_STEPS = [
+    #bg
+    {'bg' : True, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
+    # lateral
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral + axial
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral + axial + zcoeffs
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : True, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : DEFAULT_OPTIONS},
+    # phase: very rough
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # phase: rough
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # bg + focal-plane blur
+    {'bg' : True, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
+    {'bg' : False, 'focal_plane_blur' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
+    # lateral + axial + phase (fine)
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # amplitude: very rough
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # amplitude: rough
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # focal plane blur
+    {'bg' : False, 'focal_plane_blur' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
+    # amplitude: fine
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : fine_smooth, 'amp_smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral + axial + phase (fine) + amplitude (fine)
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # phase: pixel
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : smooth_as_butter}, 'opt_options' : DEFAULT_OPTIONS},
+    # amplitude: pixel
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral + axial + phase (pixel) + amplitude (pixel)
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : DEFAULT_OPTIONS},
+]
 
 
 def get_array_module(arr):
     if cp is not None:
-        return cp.get_array_module(cp)
+        return cp.get_array_module(arr)
     else:
         return np
 
@@ -560,7 +604,7 @@ def get_gkdagger(dPhi_dGkhat):
 def get_fkdagger(gkdagger, shifts, blur_sigma):
     # maybe need to revist pixel and coordinate transfer functions
     #shifts = np.asarray([my_fourier_shift(-y,-x, shape) for (x,y) in zip(xk,yk)])
-    xp = cp.get_array_module(gkdagger)
+    xp = get_array_module(gkdagger)
     Hd = get_Hd(shifts[0].shape[0], xp=xp)
     if blur_sigma != 0:
         gauss = fft2_shiftnorm(get_gauss(blur_sigma, shifts[0].shape, xp=xp) , norm=None).conj() #* shifts[0].shape[0]
@@ -775,7 +819,7 @@ def Gammaprime(x, kappa):
     out[absx > 3*kappa]  = 0
     return out
 
-def measure_defocused_psfs(camstream, dmstream, camstage, defocus_positions, nimages, final_position=None, dm_cmds=None, zero_dm=True, delay=None):
+def measure_defocused_psfs(client, camstream, dmstream, camstage, defocus_positions, nimages, final_position=None, dm_cmds=None, zero_dm=True, delay=None, improc='mean', darkim=None):
     dm_shape = dmstream.grab_latest().shape
     dm_type = dmstream.buffer.dtype
     
@@ -783,12 +827,15 @@ def measure_defocused_psfs(camstream, dmstream, camstage, defocus_positions, nim
     if zero_dm:
         dmstream.write(np.zeros(dm_shape).astype(dm_type))
 
+    if darkim is None:
+        darkim = 0
+
     allims = []
-    for j, pos in enumerate(defocus_pos):
+    for j, pos in enumerate(defocus_positions):
         print(f'Moving to focus position {j+1}')
                                 
         # block until stage is in position
-        instrument.move_stage(client, camstage, pos, block=True)
+        move_stage(client, camstage, pos, block=True)
 
         # loop over DM commands, and take measurements
         curims = []
@@ -798,7 +845,11 @@ def measure_defocused_psfs(camstream, dmstream, camstage, defocus_positions, nim
             dmstream.write(cmd.astype(dm_type))
             if delay is not None:
                 sleep(delay)
-            imlist = camstream.grab_many(nimages)
+            imlist = np.asarray(camstream.grab_many(nimages))
+            if improc == 'register':
+                im = np.mean(register_images(imlist - darkim, upsample=10), axis=0)
+            else:
+                im = np.mean(imlist, axis=0) - darkim
             curims.append(im)
         allims.append(curims)      
         
@@ -806,10 +857,10 @@ def measure_defocused_psfs(camstream, dmstream, camstage, defocus_positions, nim
     if zero_dm:
         dmstream.write(np.zeros(dm_shape).astype(dmstream.buffer.dtype))
     if final_position is not None:
-        phase_diversity.move_stage(client, camstage, final_position, block=False)
+        move_stage(client, camstage, final_position, block=False)
     return np.squeeze(allims)
 
-def process_phase_retrieval(pupil_region, z0vals, zbasis, wavelen, f, pupil_coords, focal_coords, pupil_rescaled, psfs, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, weights=None, gpu=False):
+def process_phase_retrieval(pupil_region, z0vals, zbasis, wavelen, f, pupil_coords, focal_coords, pupil_rescaled, psfs, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, weights=None, gpu=False, steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS):
         
     if weights is None:
         weights = np.ones_like(psfs)
@@ -826,51 +877,7 @@ def process_phase_retrieval(pupil_region, z0vals, zbasis, wavelen, f, pupil_coor
     if yk_in is None:
         yk_in = np.array([c[0] - cenyx[0] for c in coms_yx] )
     
-    opt_options = {'gtol' : 1e-6, 'ftol' : 1e-8}
-    
-    rough_rough_smooth = 5
-    rough_smooth = 3 #1.75 #3
-    fine_smooth = 0.75 # 1.5
-    smooth_as_butter = 0.3
-
-    STEPS = [
-        #bg
-        {'bg' : True, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
-        # lateral
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : opt_options},
-        # lateral + axial
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : opt_options},
-        # lateral + axial + zcoeffs
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : True, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : opt_options},
-        # phase: very rough
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_rough_smooth}, 'opt_options' : opt_options},
-        # phase: rough
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_smooth}, 'opt_options' : opt_options},
-        # bg + focal-plane blur
-        {'bg' : True, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
-        {'bg' : False, 'focal_plane_blur' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
-        # lateral + axial + phase (fine)
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : fine_smooth}, 'opt_options' : opt_options},
-        # amplitude: very rough
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_rough_smooth}, 'opt_options' : opt_options},
-        # amplitude: rough
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_smooth}, 'opt_options' : opt_options},
-        # focal plane blur
-        {'bg' : False, 'focal_plane_blur' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
-        # amplitude: fine
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : fine_smooth, 'amp_smoothing' : fine_smooth}, 'opt_options' : opt_options},
-        # lateral + axial + phase (fine) + amplitude (fine)
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : fine_smooth}, 'opt_options' : opt_options},
-        # phase: pixel
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : smooth_as_butter}, 'opt_options' : opt_options},
-        # amplitude: pixel
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : opt_options},
-        # lateral + axial + phase (pixel) + amplitude (pixel)
-        {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : opt_options},
-    ]
-    
-
     out_final, param_dict, est_phase, est_amp, est_Epupil, est_Efocal, est_psf = multi_step_fit(psfs, pupil_region, z0vals, zbasis, wavelen, f, weights,
-                                                      pupil_coords, focal_coords, input_phase=input_phase, input_amp=pupil_rescaled*pupil_region, xk=xk_in, yk=yk_in, jac=True, steps=STEPS, focal_plane_blur=focal_plane_blur, gpu=gpu)
+                                                      pupil_coords, focal_coords, steps=steps, options=options, input_phase=input_phase, input_amp=pupil_rescaled*pupil_region, xk=xk_in, yk=yk_in, jac=True, focal_plane_blur=focal_plane_blur, gpu=gpu)
     
     return est_amp, est_phase, est_Epupil, est_Efocal, est_psf, out_final['fun'], param_dict

@@ -63,5 +63,5 @@ def move_stage(client, device, position, block=True, timeout=60):
         command_dict = {f'{device}.position.target' : position}
         indi_send_and_wait(client, command_dict, tol=1e-2, wait_for_properties=True, timeout=timeout)
     else:
-        client.wait_for_properties(['{device}.position',],timeout=timeout)
+        client.wait_for_properties([f'{device}.position',],timeout=timeout)
         client[f'{device}.position.target'] = position
