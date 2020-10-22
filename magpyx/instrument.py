@@ -46,7 +46,7 @@ def set_science_camera(client, camdevice, roi_dict=None, adcspeed=None, exptime=
 
 def take_dark(camstream, client, camdevice, nimages):
     client[f'{camdevice}.shutter.toggle'] = SwitchState.ON
-    sleep(0.5)
+    sleep(2)
     dark = np.mean(camstream.grab_many(nimages),axis=0)
     client[f'{camdevice}.shutter.toggle'] = SwitchState.OFF
     return dark
