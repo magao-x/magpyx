@@ -442,6 +442,9 @@ def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weig
      
     # weighted sum of objective funcs
     obj = get_Phi(weighting, Gk, Gkhat) + lambda1 * phi_1 + lambda2 * phi_2
+
+    if isinstance(obj, cp.core.ndarray):
+        obj = cp.asnumpy(obj)
     
     # compute the Jacobian terms
     if jac:
