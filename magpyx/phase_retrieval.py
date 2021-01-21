@@ -56,40 +56,45 @@ rough_smooth = 3 #1.75 #3
 fine_smooth = 0.75 # 1.5
 smooth_as_butter = 0.3
 
+lambda1 = 1
+lambda2 = 0.25
+kappa1 = 1
+kappa2 = 1
+
 DEFAULT_STEPS = [
     #bg
     {'bg' : True, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
     # lateral
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial + zcoeffs
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : True, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : True, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : None, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # phase: very rough
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_rough_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # phase: rough
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # bg + focal-plane blur
     {'bg' : True, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
     {'bg' : False, 'focal_plane_blur' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
     # lateral + axial + phase (fine)
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # amplitude: very rough
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_rough_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # amplitude: rough
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # focal plane blur
     {'bg' : False, 'focal_plane_blur' : True, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : {'jac' : False}},
     # amplitude: fine
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : fine_smooth, 'amp_smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : fine_smooth, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial + phase (fine) + amplitude (fine)
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # phase: pixel
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : smooth_as_butter}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : smooth_as_butter, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # amplitude: pixel
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial + phase (pixel) + amplitude (pixel)
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : smooth_as_butter, 'amp_smoothing' : smooth_as_butter, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
 ]
 
 
