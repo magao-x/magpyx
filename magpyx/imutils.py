@@ -7,7 +7,8 @@ except ImportError:
 
 import pyfftw
 from scipy.optimize import leastsq
-from skimage.feature import register_translation
+#from skimage.feature import register_translation
+from skimage.registration import phase_cross_correlation as register_translation
 from scipy.ndimage import shift
 
 def rms(image,mask=None):
@@ -48,7 +49,7 @@ def register_images(imlist, sliceyx=None, upsample=1):
     imreglist = []
     for im in imlist:
         # find shift
-        shiftyx, error, diffphase = register_translation(imref, im[sliceyx], upsample)
+        shiftyx, error, diffphase = register_translation(imref, im[sliceyx], upsample_factor=upsample)
         # shift to reference
         imreglist.append( shift(im[sliceyx], shiftyx) ) 
     return imreglist
@@ -56,7 +57,7 @@ def register_images(imlist, sliceyx=None, upsample=1):
 def get_gauss(sigma, shape, cenyx=None, xp=np):
     if cenyx is None:
         cenyx = xp.asarray([(shape[0])/2., (shape[1])/2.]) # no -1
-    yy, xx = xp.indices(shape) - cenyx[:,None,None]
+    yy, xx = xp.indices(shape).astype(float) - cenyx[:,None,None]
     g = xp.exp(-0.5*(yy**2+xx**2)/sigma**2)
     return g / xp.sum(g)
 
