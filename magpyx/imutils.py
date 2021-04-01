@@ -76,23 +76,49 @@ def gauss_convolve(image, sigma, force_real=True):
     g = get_gauss(sigma, image.shape, xp=xp)
     return convolve_fft(image, g, force_real=force_real)
 
-def fft2_shiftnorm(image, axes=None, norm='ortho'):
+def fft2_shiftnorm(image, axes=None, norm='ortho', shift=True):
+
     if axes is None:
         axes = (-2, -1)
-    if isinstance(image, np.ndarray):
-        t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
-        return np.fft.fftshift(t(),axes=axes)
+
+    if isinstance(image, np.ndarray): # CPU or GPU
+        xp = np
     else:
-        return cp.fft.fftshift(cp.fft.fft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+        xp = cp
+
+    if shift:
+        shiftfunc = xp.fft.fftshift
+        ishiftfunc = xp.fft.ifftshift
+    else:
+        shiftfunc = ishiftfunc = lambda x, axes=None: x
+
+    if isinstance(image, np.ndarray):
+        t = pyfftw.builders.fft2(ishiftfunc(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
+        return shiftfunc(t(),axes=axes)
+    else:
+        return shiftfunc(cp.fft.fft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm), axes=axes)
     
-def ifft2_shiftnorm(image, axes=None, norm='ortho'):
+def ifft2_shiftnorm(image, axes=None, norm='ortho', shift=True):
+
     if axes is None:
         axes = (-2, -1)
-    if isinstance(image, np.ndarray):
-        t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
-        return np.fft.fftshift(t(), axes=axes)
+
+    if isinstance(image, np.ndarray): # CPU or GPU
+        xp = np
     else:
-        return cp.fft.fftshift(cp.fft.ifft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+        xp = cp
+
+    if shift:
+        shiftfunc = xp.fft.fftshift
+        ishiftfunc = xp.fft.ifftshift
+    else:
+        shiftfunc = ishiftfunc = lambda x, axes=None: x
+
+    if isinstance(image, np.ndarray):
+        t = pyfftw.builders.ifft2(ishiftfunc(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
+        return shiftfunc(t(), axes=axes)
+    else:
+        return shiftfunc(cp.fft.ifft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm), axes=axes)
 
 def rot_matrix(angle_rad, y=0, x=0):
     # rotation about the origin
