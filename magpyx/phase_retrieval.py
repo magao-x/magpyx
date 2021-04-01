@@ -416,7 +416,7 @@ def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weig
     xp = get_array_module(meas_psfs)
     # copy the param_dict and update it with the fit parameters, as needed
     # here we also do the conversion from CPU to GPU memory if needed
-    curdict = deepcopy(param_dict)
+    curdict = param_dict#deepcopy(param_dict)
     params = xp.asarray(params)
     #ukeys = np.unique(keys)
     for key, mapping in zip(ukeys, key_param_mapping):
@@ -433,13 +433,14 @@ def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weig
     lambda2 = arg_options.get('lambda2', 0)
     mn = xp.count_nonzero(pupil)
     B = curdict['point_by_point_ampB'][0]
-    if lambda1 != 0:
+    fitamp = curdict['point_by_point_ampB'][1]
+    if (lambda1 != 0) and fitamp:
         kappa1 = arg_options['kappa1']
         phi_1 = obj_phi1(B, pupil, kappa1, mn)
     else:
         phi_1 = 0
     # get Phi_2 and its jacobian
-    if lambda2 != 0:
+    if (lambda2 != 0) and fitamp:
         kappa2 = arg_options['kappa2']
         phi_2 = obj_phi2(B, pupil, kappa2, mn)
     else:
@@ -455,15 +456,22 @@ def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weig
     if jac:
         # ---first, the setup---
 
+        # used by all jacobian terms
         dPhi_dGkhat = get_dPhi_dGkhat(weighting, Gkhat, Gk)
         gkdagger = get_gkdagger(dPhi_dGkhat)
-        fkdagger = get_fkdagger(gkdagger, Hk, curdict['focal_plane_blur'][0][0]) 
-        dPhi_dIk = get_dPhi_dIk(fkdagger)
-        Ekdagger = get_Ekdagger(Ekhat, dPhi_dIk)
-        Ukdagger = get_Ukdagger(Ekdagger)
-        Ufdagger = get_Ufdagger(Ukdagger, curdict['zk'][0], wavelen, pupil_coords[-1])
-        Efdagger = get_Efdagger(Ufdagger)
-        Epdagger = get_Epdagger(Efdagger)
+
+        # only calculate if zk, zcoeffs, phase, or amp are optimized
+        if np.any([curdict['zk'][1], curdict['zcoeffs'][1], curdict['point_by_point_phase'][1], curdict['point_by_point_ampB'][1]]):
+            fkdagger = get_fkdagger(gkdagger, Hk, curdict['focal_plane_blur'][0][0]) 
+            dPhi_dIk = get_dPhi_dIk(fkdagger)
+            Ekdagger = get_Ekdagger(Ekhat, dPhi_dIk)
+            Ukdagger = get_Ukdagger(Ekdagger)
+
+        # only calculate if zcoeffs, phase, or amp are optimized
+        if np.any([curdict['zcoeffs'][1], curdict['point_by_point_phase'][1], curdict['point_by_point_ampB'][1]]):
+            Ufdagger = get_Ufdagger(Ukdagger, curdict['zk'][0], wavelen, pupil_coords[-1])
+            Efdagger = get_Efdagger(Ufdagger)
+            Epdagger = get_Epdagger(Efdagger)
 
         # ---now, compute the actual gradient terms---
         jaclist = []
@@ -483,7 +491,7 @@ def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weig
 
         # zernike gradient
         if curdict['zcoeffs'][1]: #Epdagger
-            gradzern = get_dPhi_dzcoeff(Epdagger, Ephat, zbasis) # not quite working yet
+            gradzern = get_dPhi_dzcoeff(Epdagger, Ephat, zbasis)
             jaclist.append(gradzern)
 
         # estimate point-by-point phase
