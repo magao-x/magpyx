@@ -15,12 +15,12 @@ def get_indi_client(port=7624):
 
 def set_camera_roi(client, device, roi_x, roi_y, roi_h, roi_w):
     # update roi parameters
-    client.wait_for_properties([f'{device}.roi_x', f'{device}.roi_y', f'{device}.roi_h' ,f'{device}.roi_w',
+    client.wait_for_properties([f'{device}.roi_region_x', f'{device}.roi_region_y', f'{device}.roi_region_h' ,f'{device}.roi_region_w',
                                 f'{device}.roi_set'])
-    client[f'{device}.roi_x.target'] = roi_x
-    client[f'{device}.roi_y.target'] = roi_y
-    client[f'{device}.roi_h.target'] = roi_h
-    client[f'{device}.roi_w.target'] = roi_w
+    client[f'{device}.roi_region_x.target'] = roi_x
+    client[f'{device}.roi_region_y.target'] = roi_y
+    client[f'{device}.roi_region_h.target'] = roi_h
+    client[f'{device}.roi_region_w.target'] = roi_w
     sleep(2.0)
     client[f'{device}.roi_set.request'] = SwitchState.ON
     sleep(2.0)
@@ -44,9 +44,9 @@ def set_science_camera(client, camdevice, roi_dict=None, adcspeed=None, exptime=
         client[f'{nddevice}.filterName.{nd}'] = SwitchState.ON
         logger.info(f'Set {nddevice} to {nd}.')
 
-def take_dark(camstream, client, camdevice, nimages):
+def take_dark(camstream, client, camdevice, nimages, delay=2.0):
     client[f'{camdevice}.shutter.toggle'] = SwitchState.ON
-    sleep(0.5)
+    sleep(delay)
     dark = np.mean(camstream.grab_many(nimages),axis=0)
     client[f'{camdevice}.shutter.toggle'] = SwitchState.OFF
     return dark
