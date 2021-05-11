@@ -78,7 +78,13 @@ def select_actuators_from_command(act_y, act_x, cmd, dm_map, dm_mask):
     order = map_square_to_vector(dm_map*cmd.astype(bool), dm_map, dm_mask.astype(bool))[cmd_vec.astype(bool)]
     return act_y[cmd_vec.astype(bool)], act_x[cmd_vec.astype(bool)], order
 
-def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
+def get_hadamard_modes(Nact):
+    np2 = 2**int(np.ceil(np.log2(Nact)))
+    #print(f'Generating a {np2}x{np2} Hadamard matrix.')
+    hmat = hadamard(np2)
+    return hmat[:Nact,:Nact]
+
+'''def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
     nact = np.count_nonzero(dm_mask)
     if shuffle is None:
         shuffle = slice(nact)
@@ -86,7 +92,7 @@ def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
     print(f'Generating a {np2}x{np2} Hadamard matrix.')
     hmat = hadamard(np2)
     return np.roll(hmat[shuffle,:nact], roll, axis=1)
-    '''cmds = []
+    cmds = []
     nact = np.count_nonzero(dm_mask)
     for n in range(nact):
         cmd = np.zeros(nact)

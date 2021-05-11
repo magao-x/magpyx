@@ -54,7 +54,9 @@ setup(
                             'pyindi_send_preset=magpyx.presets:main',
                             'pyindi_send_triplet=magpyx.presets:send_indi_triplet',
                             'auto_focus=magpyx.focus_stage:main',
-                            'fdpr_estimate_response=magpyx.phase_retrieval.console:console_estimate_response_matrix']
+                            'fdpr_estimate_response=magpyx.phase_retrieval.console:console_estimate_response_matrix',
+                            'fdpr_measure_response=magpyx.phase_retrieval.console:console_measure_response_matrix',
+                            'fdpr_oneshot=magpyx.phase_retrieval.console:console_estimate_oneshot']
     },
     
     # List run-time dependencies here.  These will be installed by pip when

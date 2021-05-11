@@ -154,6 +154,13 @@ class ImageStream(shmio.Image):
             i += 1
         return cube
 
+def create_shmim(name, dims, dtype=shmio.ImageStreamIODataType.FLOAT, shared=1, nbkw=8):
+    # if ImageStream objects didn't auto-open on creation, you could create and return that instead. oops.
+    img = shmio.Image()
+    # not sure if I should try to destroy first in case it already exists
+    img.create(name, dims, dtype, shared, nbkw)
+    img.close()
+
 def send_dm_poke(shmim_name, x, y, val):
     with ImageStream(shmim_name) as shmim:
         curvals = shmim.grab_latest()

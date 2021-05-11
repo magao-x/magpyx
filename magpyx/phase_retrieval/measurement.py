@@ -4,21 +4,60 @@ What goes here?
 Two version of the measurement function:
 * w/ stage diversity (generalize to no DM)
 * w/ DM diversity
+    - currently uses dmModes to get best defocus mode. Not sure how ideal this approach is.
 
 Is that it?
 '''
 
 from purepyindi import INDIClient
+
 from ..imutils import register_images
 from ..utils import ImageStream, indi_send_and_wait
 from ..instrument import move_stage
 
 
-def measure_dm_diversity(client, camstream, dmstream, defocus_vals, nimages, dm_cmds=None, zero_dm=True, delay=None, improc='mean', darkim=None):
+def take_measurements_from_config(config_params, dm_cmds=None):
+
+    # open indi client connection
+    client = INDIClient('localhost', config_params.get_param('diversity', 'port', int))
+
+    # open shmims
+    dmstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+    camstream = ImageStream(config_params.get_param('camera', 'name', str))
+
+    # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
+    darkim = take_dark(camstream, client, camstream, config_params.get_param('diversity', 'ndark', str))
+
+    # measure
+    div_type = config_params.get_param('diversity', 'type', str)
+    if div_type.lower() == 'dm':
+        imcube = measure_dm_diversity(client,
+                                      config_params.get_param('diversity', 'dmModes', str),
+                                      camstream,
+                                      dmstream,
+                                      config_params.get_param('diversity', 'values', float),
+                                      config_params.get_param('diversity', 'navg', float),
+                                      darkim=darkim,
+                                      dm_cmds=dm_cmds
+                                      )
+    else: # stage diversity
+        imcube = measure_stage_diversity(client,
+                                config_params.get_param('diversity', 'dmModes', str),
+                                camstream,
+                                dmstream,
+                                config_params.get_param('diversity', 'camstage', str),
+                                config_params.get_param('diversity', 'values', float),
+                                config_params.get_param('diversity', 'navg', float),
+                                darkim=darkim,
+                                dm_cmds=dm_cmds
+                                )
+    return imcube
+
+def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nimages, dm_cmds=None, zero_dm=True, delay=None, improc='mean', darkim=None):
 
     # get the initial defocus set on the DM
-    client.wait_for_properties([f'wooferModes.current_amps',])
-    defocus0 = client['wooferModes.current_amps.0002']
+    client.wait_for_properties([f'{device}.current_amps',])
+    defocus0 = client[f'{device}.current_amps.0002']
     
     # commanding DM
     dm_shape = dmstream.grab_latest().shape
@@ -35,7 +74,7 @@ def measure_dm_diversity(client, camstream, dmstream, defocus_vals, nimages, dm_
         print(f'Moving to focus position {j+1}')
                                 
         # send INDI command to apply defocus to DM
-        client['wooferModes.current_amps.0002'] = defocus0 + curdefocus
+        client[f'{device}.current_amps.0002'] = defocus0 + curdefocus
         sleep(1.0)
 
         # loop over DM commands, and take measurements
@@ -57,7 +96,7 @@ def measure_dm_diversity(client, camstream, dmstream, defocus_vals, nimages, dm_
     # set defocus back to the starting point
     if zero_dm:
         dmstream.write(np.zeros(dm_shape).astype(dmstream.buffer.dtype))
-    client['wooferModes.current_amps.0002'] = defocus0
+    client[f'{device}.current_amps.0002'] = defocus0
     sleep(1.0)
     return np.squeeze(allims)
 

@@ -721,6 +721,8 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
         out, curdict = estimate_phase_from_measured_psfs(measured_psfs, curdict, pupil, zbasis, wavelen, z0, pupil_coords,
                                     focal_coords, 0, weighting, arg_options=arg_options, options=opt_options, method=method, jac=opt_options.pop('jac',jac))
         logger.info('Success? ' + str(out['success']))
+
+
     if gpu:
         # convert as necessary param_dict terms from GPU to CPU memory
         for key, values in curdict.items():
@@ -728,13 +730,18 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
                 curdict[key][0] = cp.asnumpy(values[0])
         pupil = cp.asnumpy(pupil)
         zbasis = cp.asnumpy(zbasis)
+        pupil_coords = cp.asnumpy(pupil_coords)
+        focal_coords = cp.asnumpy(focal_coords)
 
     # collect all the quantities to pass back
     total_phase = param_dict_to_phase(curdict, pupil, zbasis) + input_phase
     total_amp = param_dict_to_amplitude(curdict, pupil)
     sim_psf, Efocal, Epupil = simulate_psf(total_amp, total_phase, wavelen, z0, pupil_coords, focal_coords, to_focal_plane=True)
 
-    return out, curdict, total_phase, total_amp, Epupil, Efocal, sim_psf
+    #print(type(pupil), type(zbasis), type(pupil_coords[0]), type(focal_coords[0]))
+    Ikhat, Ekhat, Ukhat, Ephat, Gkhat, gkhat, Hk, Hd, fkhat = get_Gkhat(pupil, zbasis, wavelen, z0, pupil_coords, focal_coords, 0, curdict)
+
+    return out, curdict, total_phase, total_amp, Epupil, Efocal, sim_psf, Gkhat
 
 def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS):
     '''
@@ -772,7 +779,7 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
 
     z0vals = params['zkvals']
     
-    out_final, param_dict, est_phase, est_amp, est_Epupil, est_Efocal, est_psf = multi_step_fit(psfs_shifted, fitting_region_shifted, z0vals, zbasis_shifted,
+    out_final, param_dict, est_phase, est_amp, est_Epupil, est_Efocal, est_psf, Gkhat = multi_step_fit(psfs_shifted, fitting_region_shifted, z0vals, zbasis_shifted,
         params['wavelen'], params['f'], weights_shifted, pcoords_shifted, fcoords_shifted, steps=steps, options=options, input_phase=input_phase,
         input_amp=pupil_analytic_shifted + fitting_region_shifted*1e-5, xk=xk_in, yk=yk_in, jac=True, focal_plane_blur=focal_plane_blur, method=method, gpu=gpu)
     
@@ -784,7 +791,8 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
         'Efocal' : np.fft.ifftshift(est_Efocal),
         'psf' : np.fft.ifftshift(est_psf),
         'obj_val' : out_final['fun'],
-        'param_dict' : param_dict
+        'param_dict' : param_dict,
+        'Gkhat' : np.fft.ifftshift(Gkhat, axes=(-2,-1))
     }
 
 def _process_phase_retrieval_mpfriendly(params, input_phase, xk_in, yk_in, focal_plane_blur, gpu, method, steps, options, psfs):
