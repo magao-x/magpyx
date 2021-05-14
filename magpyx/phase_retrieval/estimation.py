@@ -917,7 +917,7 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
 
     # defocus diversity
     if divtype.lower() == 'dm':
-        div_axial = defocus_rms_to_lateral_shift(np.asarray(divvals)*1e-6, fnum)
+        div_axial = defocus_rms_to_lateral_shift(-np.asarray(divvals)*1e-6, fnum)
     elif divtype.lower() == 'stage':
         div_axial = np.asarray(divvals)
     else:

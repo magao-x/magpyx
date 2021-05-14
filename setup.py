@@ -56,6 +56,7 @@ setup(
                             'auto_focus=magpyx.focus_stage:main',
                             'fdpr_estimate_response=magpyx.phase_retrieval.console:console_estimate_response_matrix',
                             'fdpr_measure_response=magpyx.phase_retrieval.console:console_measure_response_matrix',
+                            'fdpr_compute_control_matrix=magpyx.phase_retrieval.console:console_compute_control_matrix',
                             'fdpr_oneshot=magpyx.phase_retrieval.console:console_estimate_oneshot']
     },
     

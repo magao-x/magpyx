@@ -8,25 +8,29 @@ Two version of the measurement function:
 
 Is that it?
 '''
+import numpy as np
+from time import sleep
 
 from purepyindi import INDIClient
 
 from ..imutils import register_images
 from ..utils import ImageStream, indi_send_and_wait
-from ..instrument import move_stage
+from ..instrument import move_stage, take_dark
 
 
-def take_measurements_from_config(config_params, dm_cmds=None):
+def take_measurements_from_config(config_params, dm_cmds=None, delay=None):
 
     # open indi client connection
     client = INDIClient('localhost', config_params.get_param('diversity', 'port', int))
+    client.start()
 
     # open shmims
     dmstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
-    camstream = ImageStream(config_params.get_param('camera', 'name', str))
+    camname = config_params.get_param('camera', 'name', str)
+    camstream = ImageStream(camname)
 
     # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
-    darkim = take_dark(camstream, client, camstream, config_params.get_param('diversity', 'ndark', str))
+    darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
 
     # measure
     div_type = config_params.get_param('diversity', 'type', str)
@@ -38,18 +42,19 @@ def take_measurements_from_config(config_params, dm_cmds=None):
                                       config_params.get_param('diversity', 'values', float),
                                       config_params.get_param('diversity', 'navg', float),
                                       darkim=darkim,
-                                      dm_cmds=dm_cmds
+                                      dm_cmds=dm_cmds,
+                                      delay=delay
                                       )
     else: # stage diversity
         imcube = measure_stage_diversity(client,
-                                config_params.get_param('diversity', 'dmModes', str),
                                 camstream,
                                 dmstream,
                                 config_params.get_param('diversity', 'camstage', str),
                                 config_params.get_param('diversity', 'values', float),
                                 config_params.get_param('diversity', 'navg', float),
                                 darkim=darkim,
-                                dm_cmds=dm_cmds
+                                dm_cmds=dm_cmds,
+                                delay=delay
                                 )
     return imcube
 

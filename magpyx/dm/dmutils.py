@@ -66,8 +66,7 @@ def map_vector_to_square(cmd_vec, dm_map, dm_mask):
     
     mapping = dm_map[filled_mask] - 1
     sq[filled_mask] = cmd_vec[mapping]
-    sq *= dm_mask
-    return sq
+    return sq * dm_mask
 
 def select_actuators_from_command(act_y, act_x, cmd, dm_map, dm_mask):
     '''

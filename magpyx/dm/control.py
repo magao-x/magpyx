@@ -9,7 +9,7 @@ import numpy as np
 from scipy.linalg import svd
 from skimage.filters import threshold_otsu
 
-import .dmutils
+from . import dmutils
 
 def collect_hadamard_interaction_matrix(dmstream, wfsfunc, paramdict={}):
     '''
@@ -40,8 +40,9 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube)
 
     # get DM and WFS maps and masks
+    print('IFCUBE:', ifcube.min(), ifcube.max())
     wfs_ctrl_map, wfs_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, threshold=wfsthresh)
-    dm_ctrl_map, dm_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=dmthresh)
+    dm_ctrl_map, dm_ctrl_mask = get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=dmthresh)
 
     # interpolate DM modes
     dmmodes_interp = interpolate_dm_modes(dmmodes, dm_ctrl_mask, dm_map, dm_mask, n=ninterp)
@@ -50,15 +51,15 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     C = get_control_matrix(dmmodes_interp, wfsmodes, singvals, nmodes=nmodes)
 
     return {
-        'ifcube' : ifcube,
-        'wfs_ctrl_map' : wfs_ctrl_map,
-        'wfs_ctrl_mask' : wfs_ctrl_mask,
-        'dm_ctrl_map' : dm_ctrl_map,
-        'dm_ctrl_mask' : dm_ctrl_mask,
+        'ifmat' : ifcube,
+        'wfsmap' : wfs_ctrl_map,
+        'wfsmask' : wfs_ctrl_mask,
+        'dmmap' : dm_ctrl_map,
+        'dmmask' : dm_ctrl_mask,
         'wfsmodes' : wfsmodes,
         'dmmodes' : dmmodes_interp,
         'singvals' : singvals,
-        'C' : C
+        'ctrlmat' : C
     }
 
 def get_control_matrix(dmmodes, wfsmodes, singvals, nmodes=None):
@@ -88,6 +89,7 @@ def get_svd_from_ifcube(ifcube):
     '''
     nact = ifcube.shape[0]
     wfsmodes, s, dmmodes = svd(ifcube.reshape((nact,-1)).swapaxes(0,1))
+    return wfsmodes, s, dmmodes
 
 def get_ifcube_from_hmeas(hmeas, hmodes, hval):
     '''
@@ -100,9 +102,9 @@ def get_ifcube_from_hmeas(hmeas, hmodes, hval):
         raise ValueError(f'hmodes must be a square matrix, but got shape {shape}!')
 
     # take the difference of the +/- measurements and normalize by the commanded amplitude hval
-    hcube_norm = (hmeas[:shape[0]] - hmeas[:shape[1]]) / 2. / hval
+    hcube_norm = (hmeas[:shape[0]] - hmeas[shape[0]:]) / 2. / hval
 
-    return np.dot(hmodes, hcube_norm.reshape(shape[0],-1)).reshape(shape_wfs)
+    return np.dot(hmodes, hcube_norm.reshape((shape[0],-1))).reshape((shape[0],*shape_wfs))
 
 def get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=0.5):
     '''
@@ -154,7 +156,7 @@ def get_wfs_ctrl_map_mask(ifcube, threshold=0.5):
             Nwfs x Nwfs binary array of WFS pixels that respond to DM commands
     '''
     shape = ifcube.shape
-    wfs_ctrl_map = np.sqrt(np.mean(ifcube**2,axis=0)).reshape((shape[1],shape[2]))
+    wfs_ctrl_map = np.sqrt(np.mean(ifcube**2,axis=0))#.reshape((shape[1],shape[2]))
     thresh_wfs = threshold_otsu(wfs_ctrl_map)
     wfs_ctrl_mask = wfs_ctrl_map > (thresh_wfs*threshold)
 
@@ -163,7 +165,7 @@ def get_wfs_ctrl_map_mask(ifcube, threshold=0.5):
 def interpolate_dm_modes(dm_mode_matrix, active_mask, dm_map, dm_mask, n=1):
     
     # get the interpolation mapping
-    couple_matrix = get_coupling_matrix(active_mask, dm_map, dm_mask, n=n)
+    couple_matrix = get_coupling_matrix(active_mask, dm_map, dm_mask.astype(bool), n=n)
     n = couple_matrix.shape[0]
     
     # a matrix multiply does the interpolation
@@ -177,8 +179,8 @@ def get_coupling_matrix(active_mask, dm_map, dm_mask, n=1):
     '''
 
     # define inactive map
-    inactive_mask = ~active_mask & dm_mask
-    nact = np.sum(dm_mask)
+    inactive_mask = ~active_mask.astype(bool) & dm_mask
+    nact = int(np.sum(dm_mask))
 
     # get indices for distance calc later
     shape = dm_map.shape

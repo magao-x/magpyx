@@ -1,38 +1,13 @@
 '''
-
 To do:
-* create measure_interaction matrix functions
-* finish one-shot
-    * need to finish reporting code
-    * figure out general way to override conf parameters (for all console functions)
-    * test
-* create compute_control_matrix
-    * well, write the thing
-    * work out how to define a custom control basis
-    * pre-define a couple control bases or something (IFs, zernikes, KL modes, fourier modes, ??)
-    * write dm map, dm mask funcs and write to file
-* create closed_loop_coorection
-    * write it
-
-What goes here?
-
-X measure_interaction_matrix
-X measure_interaction_matrix_console
-X one-shot estimation (measure + estimate)
-    - should add option to override diversity type and diversity values, etc.
-    - I need a more general way over overriding config values that can be used across all console functions
-    - Add RMS / Strehl reporting
-X estimate_interaction_matrix
-    - should this function take the difference of the +/- measurements and normalize properly? (divide by input value and 2)
-    - input value (mag of hadamard modes) should be in the .conf file
-X estimate_interaction_matrix_console
-* compute_control_matrix
-    - need to build interpolation outside beam footprint into DM modes / ctrl matrix
-    - maybe from the SVD save out U, S, V as well as ctrl matrix (note: I think I'm using a different def of this than cacao)
-* compute_control_matrix_console
-* closed_loop_correction
-    - I think this should accept an nmodes arg and recompute the ctrl matrix on the fly (easy if you've saved out U S V)
-* closed_loop_correction_console
+* SYMLINKS AND DIRECTORY STRUCTURES
+* preset (maybe can use existing code for this: fwtelsim, fwscind, stagescibs, fwsci2, camsci2 settings, ??)
+* specify separate delay after dm diversity via indi vs dm cmd via shmims
+* General way to override conf parameters
+* closed loop
+* function to set up directory structure from scratch
+* nproc should be set from conf file
+* npad should set the size of estrespM and everything that follows (reduce control matrix size)
 
 helpers:
 * parse config file???
@@ -116,7 +91,7 @@ Calibration:
             ...
 
 '''
-from os import path, symlink, remove
+from os import path, symlink, remove, mkdir
 import argparse
 import configparser
 from datetime import datetime
@@ -126,10 +101,11 @@ import numpy as np
 
 from purepyindi import INDIClient
 
-from ..utils import ImageStream
+from ..utils import ImageStream, create_shmim
 from ..instrument import take_dark
-from ..dm.dmutils import get_hadamard_modes
+from ..dm.dmutils import get_hadamard_modes, map_vector_to_square
 from ..dm import control
+from ..imutils import rms, write_to_fits
 
 from .estimation import multiprocess_phase_retrieval, get_magaox_fitting_params
 from .measurement import take_measurements_from_config
@@ -156,7 +132,7 @@ def console_compute_control_matrix():
     # get configuration
     config_params = Configuration(args.config)
 
-    compute_control_matrix(config_params, nomdes=args.nmodes, write=True)
+    compute_control_matrix(config_params, nmodes=args.nmodes, write=True)
 
 def compute_control_matrix(config_params, nmodes=None, write=True):
     '''
@@ -171,7 +147,7 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
 
     # get hmeas, hmodes, and hval
     calib_path = config_params.get_param('calibration', 'path', str)
-    hmeas_path = path.join(calib_path, 'measrepM.fits')
+    hmeas_path = path.join(calib_path, 'estrespM.fits')
     with fits.open(hmeas_path) as f:
         hmeas = f[0].data
     nact = config_params.get_param('interaction', 'nact', int)
@@ -179,14 +155,25 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
     hval = config_params.get_param('interaction', 'hval', float)
 
     # get dm map and mask and thresholds
-    dm_calib_path = config_params.get_param('calibration', 'dmpath', str)
-    with fits.open(path.join(dm_calib_path, 'dm_map.fits')) as f:
+    with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
         dm_map = f[0].data
-    with fits.open(path.join(dm_calib_path, 'dm_mask.fits')) as f:
+    with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
         dm_mask = f[0].data
     dmthresh = config_params.get_param('control', 'dmthreshold', float)
     wfsthresh = config_params.get_param('control', 'wfsthreshold', float)
     ninterp = config_params.get_param('control', 'ninterp', int)
+    npix = config_params.get_param('control', 'npix', int)
+
+    # reduce measured data to npix region
+    shape = hmeas.shape[-1] # I'm assuming it's square, as always...
+    cen = shape//2
+    slicezyx = (slice(None,None),
+               slice(cen-npix//2,cen+npix//2),
+               slice(cen-npix//2,cen+npix//2))
+    hmeas = hmeas[slicezyx]
+
+    if nmodes is None:
+        nmodes = config_params.get_param('control', 'nmodes', int)
 
     ctrldict = control.get_control_matrix_from_hadamard_measurements(hmeas,
                                                                      hmodes,
@@ -203,11 +190,15 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
     # write these out to file
     if write:
         for key, value in ctrldict.items():
+            outdir = path.join(calib_path, key)
+            if not path.exists(outdir):
+                mkdir(outdir)
             outname = path.join(calib_path, key, f'{key}_{date}.fits')
-            fits.write(outname, imcube)
+            write_to_fits(outname, value)
             logger.info(f'Wrote out {outname}')
-    
-    # update all symlinks
+            # update symlinks
+            sympath = path.join(calib_path, key+'.fits')
+            replace_symlink(sympath, outname)
 
 def console_measure_response_matrix():
     # argparse
@@ -224,16 +215,25 @@ def console_measure_response_matrix():
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # do the thing
-    measure_response_matrix(config_params, outpath=path.join(calib_path, f'measrespM_{descr}_{date}.fits'))
+    imcube = measure_response_matrix(config_params)
 
-def measure_response_matrix(config_params, outpath=None):
+    outpath = path.join(calib_path, 'measrespM', f'measrespM_{descr}_{date}.fits')
+    if outpath is not None:
+        fits.writeto(outpath, imcube)
+        logger.info(f'Wrote interaction measurements to {outpath}')
+
+    # replace symlink
+    sympath = path.join(calib_path, 'measrespM.fits')
+    replace_symlink(sympath, outpath)
+
+def measure_response_matrix(config_params):
 
     # get the hadamard modes
     nact = config_params.get_param('interaction', 'nact', int)
     hval = config_params.get_param('interaction', 'hval', float)
-    with fits.open(config_params.get_param('interaction', 'dm_map', float)) as f:
+    with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
         dm_map = f[0].data
-    with fits.open(config_params.get_param('interaction', 'dm_mask', float)) as f:
+    with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
         dm_mask = f[0].data
     hmodes = get_hadamard_modes(nact)
 
@@ -243,13 +243,9 @@ def measure_response_matrix(config_params, outpath=None):
     dm_cmds = np.concatenate([hmodes_sq, -hmodes_sq]) * hval
 
     logger.info(f'Taking measurements for interaction matrix...')
-    imcube = take_measurements_from_config(config_params, dm_cmds=dm_cmds)
+    imcube = take_measurements_from_config(config_params, dm_cmds=dm_cmds, delay=config_params.get_param('diversity', 'delay', float))
 
-    if outpath is not None:
-        fits.write(outpath, imcube)
-        logger.info(f'Wrote interaction measurements to {outpath}')
-
-    return imcube
+    return imcube.swapaxes(0,1)
 
 def console_estimate_oneshot():
 
@@ -269,7 +265,7 @@ def console_estimate_oneshot():
 
 def estimate_oneshot(config_params, update_shmim=True, write_out=False):
 
-    imcube = take_measurements_from_config(config_params)
+    imcube = take_measurements_from_config(config_params, delay=config_params.get_param('diversity', 'delay', float))
 
     # estimate    
     # get fitting params
@@ -281,14 +277,14 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
                                                divvals=config_params.get_param('diversity', 'values', float),
                                                npad=config_params.get_param('estimation', 'npad', int),
                                                nzernikes=config_params.get_param('estimation', 'nzernike', int))
-    estdict = estimate_response_matrix([imcube,], params) # not sure if this is the function I want to use
+    estdict = estimate_response_matrix([imcube,], fitting_params) # not sure if this is the function I want to use
 
     # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
-    phase = estdict['phase'][0] #* fitting_params['pupil_analytic']
+    phase = estdict['phase'][0] * fitting_params['pupil_analytic']
     amp = estdict['amp'][0]
 
-    phase_rms = imutils.rms(phase, fitting_params['pupil_analytic']) # is pupil_analytic a boolean?
-    amp_rms = imutils.rms(amp, fitting_params['pupil_analytic']) # NOT NORMALIZED PROPERLY
+    phase_rms = rms(phase, fitting_params['pupil_analytic'].astype(bool)) # is pupil_analytic already boolean?
+    amp_rms = rms(amp, fitting_params['pupil_analytic'].astype(bool)) # NOT NORMALIZED PROPERLY
 
     logger.info(f'Estimated phase RMS: {phase_rms}')
     logger.info(f'Estimated amplitude RMS (meaningless until normalized): {amp_rms}')
@@ -297,18 +293,13 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
     if update_shmim:
         update_estimate_shmims(phase, amp, config_params)
 
-    # clean up (close shmims, etc.)
-    client.close()
-    dmstream.close()
-    camstream.close()
-
     return estdict
 
 def update_estimate_shmims(phase, amp, config_params):
 
     phase_shmim_name = config_params.get_param('estimation', 'phase_shmim', str)
     amp_shmim_name = config_params.get_param('estimation', 'amp_shmim', str)
-    N = config_params.get_param('camera', 'region_roi_x', int) # I'm assuming ROI is always square
+    N = config_params.get_param('estimation', 'N', int)
 
     try:
         # open shmims here
@@ -324,7 +315,7 @@ def update_estimate_shmims(phase, amp, config_params):
         ampstream = ImageStream(amp_shmim_name)
 
     phasestream.write(phase.astype(phasestream.buffer.dtype))
-    ampstream.write(amp.astype(amp.buffer.dtype))
+    ampstream.write(amp.astype(ampstream.buffer.dtype))
     logger.info(f'Updated shmims {phase_shmim_name} and {amp_shmim_name}')
 
     phasestream.close()
@@ -348,13 +339,13 @@ def console_estimate_response_matrix():
     # get parameters from config file
     config_params = Configuration(args.config)
     calib_path = config_params.get_param('calibration', 'path', str)
-    sympath = path.join(calib_path, 'estrespM.fits')
+    sympath_in = path.join(calib_path, 'measrespM.fits')
 
     # find and read in fits cube
     if args.fits_file is not None:
         pathname = args.fits_file
     else:
-        pathname = sympath
+        pathname = sympath_in
     
     with fits.open(pathname) as f:
         image_cube = f[0].data
@@ -382,7 +373,8 @@ def console_estimate_response_matrix():
     fits.writeto(outname, estrespM)
 
     # replace symlink
-    replace_symlink(sympath, outname)
+    sympath_out = path.join(calib_path, 'estrespM.fits')
+    replace_symlink(sympath_out, outname)
 
 def replace_symlink(symfile, newfile):
     if path.exists(symfile):

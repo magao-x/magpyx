@@ -11,6 +11,13 @@ from scipy.optimize import leastsq
 from skimage.registration import phase_cross_correlation as register_translation
 from scipy.ndimage import shift
 
+from astropy.io import fits
+
+def write_to_fits(filename, arr):
+    if arr.dtype == bool:
+        arr = arr.astype(int)
+    fits.writeto(filename, arr)
+
 def rms(image,mask=None):
     return np.sqrt(np.mean(image[mask]**2))
 
