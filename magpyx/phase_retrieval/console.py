@@ -27,8 +27,11 @@ X estimate_interaction_matrix
     - input value (mag of hadamard modes) should be in the .conf file
 X estimate_interaction_matrix_console
 * compute_control_matrix
+    - need to build interpolation outside beam footprint into DM modes / ctrl matrix
+    - maybe from the SVD save out U, S, V as well as ctrl matrix (note: I think I'm using a different def of this than cacao)
 * compute_control_matrix_console
 * closed_loop_correction
+    - I think this should accept an nmodes arg and recompute the ctrl matrix on the fly (easy if you've saved out U S V)
 * closed_loop_correction_console
 
 helpers:
@@ -87,11 +90,12 @@ dm_mask =
 
 [control]
 dmctrlchannel = dm02disp03 #??
-threshold=??
-basis=??
+nmodes=65
 gain=0.5
 leak=0.
 niter=10
+dmthresh=??
+wfsthresh=??
 
 
 Calibration:
@@ -124,7 +128,8 @@ from purepyindi import INDIClient
 
 from ..utils import ImageStream
 from ..instrument import take_dark
-from ..dmutils import get_hadamard_modes
+from ..dm.dmutils import get_hadamard_modes
+from ..dm import control
 
 from .estimation import multiprocess_phase_retrieval, get_magaox_fitting_params
 from .measurement import take_measurements_from_config
@@ -132,6 +137,77 @@ from .measurement import take_measurements_from_config
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
+
+def console_close_loop():
+    pass
+
+def close_loop():
+    pass
+
+def console_compute_control_matrix():
+    # argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
+    parser.add_argument('--descriptor', '-d', type=str, default='', help='Descriptor to add to file name to help distinguish the outputs [NOT IMPLEMENTED].')
+    parser.add_argument('--nmodes', '-n', type=int, default=None, help='Number of modes to use in the control matrix / number SVD singular values to keep. [Defaults to value specified in conf file]')
+
+    args = parser.parse_args()
+
+    # get configuration
+    config_params = Configuration(args.config)
+
+    compute_control_matrix(config_params, nomdes=args.nmodes, write=True)
+
+def compute_control_matrix(config_params, nmodes=None, write=True):
+    '''
+    Take the Hadamard response matrix and compute:
+    * IF matrix
+    * wfsmap, wfsmask
+    * dmmap, dmmask
+    * SVD of IF matrix to get dmmodes, singvals, wfsmodes
+    * interpolation of dmmodes based on dmmask
+    * control matrix
+    '''
+
+    # get hmeas, hmodes, and hval
+    calib_path = config_params.get_param('calibration', 'path', str)
+    hmeas_path = path.join(calib_path, 'measrepM.fits')
+    with fits.open(hmeas_path) as f:
+        hmeas = f[0].data
+    nact = config_params.get_param('interaction', 'nact', int)
+    hmodes = get_hadamard_modes(nact)
+    hval = config_params.get_param('interaction', 'hval', float)
+
+    # get dm map and mask and thresholds
+    dm_calib_path = config_params.get_param('calibration', 'dmpath', str)
+    with fits.open(path.join(dm_calib_path, 'dm_map.fits')) as f:
+        dm_map = f[0].data
+    with fits.open(path.join(dm_calib_path, 'dm_mask.fits')) as f:
+        dm_mask = f[0].data
+    dmthresh = config_params.get_param('control', 'dmthreshold', float)
+    wfsthresh = config_params.get_param('control', 'wfsthreshold', float)
+    ninterp = config_params.get_param('control', 'ninterp', int)
+
+    ctrldict = control.get_control_matrix_from_hadamard_measurements(hmeas,
+                                                                     hmodes,
+                                                                     hval,
+                                                                     dm_map,
+                                                                     dm_mask,
+                                                                     wfsthresh=wfsthresh,
+                                                                     dmthresh=dmthresh,
+                                                                     ninterp=ninterp,
+                                                                     nmodes=nmodes)
+
+    date = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    # write these out to file
+    if write:
+        for key, value in ctrldict.items():
+            outname = path.join(calib_path, key, f'{key}_{date}.fits')
+            fits.write(outname, imcube)
+            logger.info(f'Wrote out {outname}')
+    
+    # update all symlinks
 
 def console_measure_response_matrix():
     # argparse

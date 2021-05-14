@@ -1,13 +1,9 @@
 '''
-All closed loop / control related functionality goes here.
+All closed loop / DM control related functionality goes here.
 
-To write:
-X dm map and dm mask functions
-X Hadamard modes -> IF modes (normalize by hval here, I suppose?)
-X SVD -> DM modes, WFS modes, sing vals + filtering -> control matrix
-X get coupled-actuator matrix
-X interpolate DM modes outside of beam footprint
-* closed loop integrator
+To do:
+* create closed loop integrator func
+* create hadamard interaction measurement func (generalize what you have for FDPR and then refactor that to use this func)
 '''
 import numpy as np
 from scipy.linalg import svd
@@ -15,6 +11,11 @@ from skimage.filters import threshold_otsu
 
 import .dmutils
 
+def collect_hadamard_interaction_matrix(dmstream, wfsfunc, paramdict={}):
+    '''
+    Generalized function for (slow) collection of a +/- hadamard interaction matrix.
+    '''
+    raise NotImplementedError('woops')
 
 def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., paramdict={}):
     '''
@@ -25,7 +26,7 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., paramdi
     arguments and passes back a WFS measurement compatible with the provided control
     matrix.
     '''
-    pass
+    raise NotImplementedError('woops')
 
 def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None):
     '''
