@@ -12,6 +12,11 @@ To do:
 helpers:
 * parse config file???
 * handle arguments (use config file if given, with override options; if not given, use defaults, with override options)
+    - parse_known_args and then parse unkonwn args
+    - unknown args update Configuration
+    - which means Configuration needs to be defined by the console func to guarantee it'll be used with the overriden values everywhere
+    - see https://stackoverflow.com/a/37367814 and https://stackoverflow.com/q/21920989
+    - >> my_func --override camera.exp_time=3 diversity.navg=10
 
 Configuration:
 
@@ -125,14 +130,19 @@ def console_compute_control_matrix():
     parser = argparse.ArgumentParser()
     parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
     parser.add_argument('--descriptor', '-d', type=str, default='', help='Descriptor to add to file name to help distinguish the outputs [NOT IMPLEMENTED].')
-    parser.add_argument('--nmodes', '-n', type=int, default=None, help='Number of modes to use in the control matrix / number SVD singular values to keep. [Defaults to value specified in conf file]')
+    #parser.add_argument('--nmodes', '-n', type=int, default=None, help='Number of modes to use in the control matrix / number SVD singular values to keep. [Defaults to value specified in conf file]')
+    parser.add_argument('--override','-o', type=str, default=None, nargs='+', help='Space-delimited list of config parameters to override, set as section.option=value')
 
     args = parser.parse_args()
 
     # get configuration
     config_params = Configuration(args.config)
+    # update with override args, if any
+    if args.override is not None:
+        override = parse_override_args(args.override)
+        config_params.update_from_dict(override)
 
-    compute_control_matrix(config_params, nmodes=args.nmodes, write=True)
+    compute_control_matrix(config_params, write=True)
 
 def compute_control_matrix(config_params, nmodes=None, write=True):
     '''
@@ -381,6 +391,17 @@ def replace_symlink(symfile, newfile):
         remove(symfile)
     symlink(newfile, symfile)
 
+def parse_override_args(override_args):
+    '''
+    Map key1=val1 key2=val2 into dictionary, I guess
+    '''
+    keyval_pairs = [x.strip() for x in override_args.split(' ')]
+    argdict = {}
+    for keyval in keyval_pairs:
+        key, val = keyval.split('=')
+        argdict[key] = val
+    return argdict    
+
 class Configuration(configparser.ConfigParser):
 
     def __init__(self, filename):
@@ -398,3 +419,14 @@ class Configuration(configparser.ConfigParser):
             return dtype(vallist[0])
         else:
             return [dtype(v) for v in vallist]
+
+    def update_from_dict(self, update_dict):
+        for key, value in update_dict.items():
+            section, option = key.split('.')
+            try:
+                self.get(section, option) # needed to verify that option already exists
+                self.set(section, option, value=value)
+            except configparser.NoSectionError as e:
+                raise RuntimeError(f'Could not find section "{section}" in config file. Double-check override option "{key}={value}."') from e
+            except configparser.NoOptionError as e:
+                raise RuntimeError(f'Could not find option "{option}" in "{section}" section of config file. Double-check override option "{key}={value}."') from e
