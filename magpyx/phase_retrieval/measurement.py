@@ -1,13 +1,3 @@
-'''
-What goes here?
-
-Two version of the measurement function:
-* w/ stage diversity (generalize to no DM)
-* w/ DM diversity
-    - currently uses dmModes to get best defocus mode. Not sure how ideal this approach is.
-
-Is that it?
-'''
 import numpy as np
 from time import sleep
 
@@ -17,20 +7,23 @@ from ..imutils import register_images
 from ..utils import ImageStream, indi_send_and_wait
 from ..instrument import move_stage, take_dark
 
+def take_measurements_from_config(config_params, dm_cmds=None, delay=None, client=None, dmstream=None, camstream=None, darkim=None):
 
-def take_measurements_from_config(config_params, dm_cmds=None, delay=None):
+    if client is None:
+        # open indi client connection
+        client = INDIClient('localhost', config_params.get_param('diversity', 'port', int))
+        client.start()
 
-    # open indi client connection
-    client = INDIClient('localhost', config_params.get_param('diversity', 'port', int))
-    client.start()
+    if dmstream is None:
+        # open shmims
+        dmstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+    if camstream is None:
+        camname = config_params.get_param('camera', 'name', str)
+        camstream = ImageStream(camname)
 
-    # open shmims
-    dmstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
-    camname = config_params.get_param('camera', 'name', str)
-    camstream = ImageStream(camname)
-
-    # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
-    darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
+    if darkim is None:
+        # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
+        darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
 
     # measure
     div_type = config_params.get_param('diversity', 'type', str)

@@ -5,6 +5,9 @@ To do:
 * create closed loop integrator func
 * create hadamard interaction measurement func (generalize what you have for FDPR and then refactor that to use this func)
 '''
+from copy import deepcopy
+from time import sleep
+
 import numpy as np
 from scipy.linalg import svd
 from skimage.filters import threshold_otsu
@@ -17,7 +20,7 @@ def collect_hadamard_interaction_matrix(dmstream, wfsfunc, paramdict={}):
     '''
     raise NotImplementedError('woops')
 
-def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., paramdict={}):
+def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., delay=None, paramdict={}):
     '''
     Generalized function for (slow) leaky integrator closed-loop operations with shmims.
 
@@ -25,8 +28,30 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., paramdi
     with the expectation that the user provides the wfsfunc that takes paramdict keyword
     arguments and passes back a WFS measurement compatible with the provided control
     matrix.
-    '''
-    raise NotImplementedError('woops')
+    '''    
+    # set up integrator
+    cmd = np.zeros_like(dmstream.buffer)
+
+    allcmds = []
+    allresid = []
+    for n in range(niter):
+        # get WFS input
+        resid = wfsfunc(paramdict)
+
+        # update command
+        update = ctrlmat.dot(resid) # maybe
+        cmd = (1 - leak) * cmd - gain * update # also maybe
+
+        # keep track of some things
+        allcmds.append(deepcopy(cmd))
+        allresid.append(resid)
+
+        # send command
+        dmstream.write(cmd)
+        if delay is not None:
+            sleep(delay)
+
+    return allcmds, allresid
 
 def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None):
     '''
