@@ -1,27 +1,31 @@
 '''
 Tools to run FDPR, calibrate, and close the loop on MagAO-X
 '''
+import configparser
+from os import path, symlink, remove, mkdir
+from datetime import datetime
+
 
 from astropy.io import fits
 import numpy as np
-import configparser
 
 from ..utils import ImageStream, create_shmim
 from ..instrument import take_dark
 from ..dm.dmutils import get_hadamard_modes, map_vector_to_square
 from ..dm import control
-from ..imutils import rms, write_to_fits
+from ..imutils import rms, write_to_fits, remove_plane
 
 from purepyindi import INDIClient
 
-from .estimation import multiprocess_phase_retrieval, get_magaox_fitting_params
+from .estimation import multiprocess_phase_retrieval, get_coords, arbitrary_basis, gauss_convolve, defocus_rms_to_lateral_shift, downscale_local_mean
+from .. import pupils
 from .measurement import take_measurements_from_config
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-def measure_and_estimate_phase_vector(config_params, client, dmstream, camstream, darkim):
+def measure_and_estimate_phase_vector(config_params, client, dmstream, camstream, darkim, wfsmask):
     '''
     wfsfunc for closed loop control: measure and return pupil-plane phase vector
     '''
@@ -31,12 +35,9 @@ def measure_and_estimate_phase_vector(config_params, client, dmstream, camstream
                                client=client, dmstream=dmstream, camstream=camstream,
                                darkim=darkim)
 
-    # return the parameter of interest
-    mask = config_params['fitting_region']
-    phasevec = config_params['phase'][0][mask]
-
-    # remove ptt first, I suppose
-    return phasevec
+    # remove ptt and return (I guess)
+    phase_pttrem = remove_plane(config_params['phase'][0], wfsmask)
+    return phase_pttrem[wfsmask]
 
 def measure_and_estimate_focal_field():
     '''
@@ -71,15 +72,20 @@ def close_loop(config_params):
     with fits.open(path.join(calibpath, 'ctrlmat.fits')) as f:
         ctrlmat = f[0].data
 
+    # get the wfs mask
+    with fits.open(path.join(calibpath, 'wfsmask.fits')) as f:
+        wfsmask = f[0].data
+
     # set up the wfs function
     wfsfuncdict = {
         'config_params' : config_params,
         'client' : client,
         'dmstream' : dmstream,
         'camstream' : camstream,
-        'darkim' : darkim
+        'darkim' : darkim,
+        'wfsmask' : wfsmask
     }
-    wfsfunc =measure_and_estimate_phase_vector
+    wfsfunc = measure_and_estimate_phase_vector
     
     control.closed_loop(dmstream, ctrlmat, wfsfunc, niter=niter, gain=gain,
                         leak=leak, delay=delay, paramdict=wfsfuncdict)
@@ -142,7 +148,7 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    # write these out to file
+    # write these out to file (should this be moved to the function in the console module?)
     if write:
         for key, value in ctrldict.items():
             outdir = path.join(calib_path, key)
@@ -195,18 +201,24 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
                                                divvals=config_params.get_param('diversity', 'values', float),
                                                npad=config_params.get_param('estimation', 'npad', int),
                                                nzernikes=config_params.get_param('estimation', 'nzernike', int))
-    estdict = estimate_response_matrix([imcube,], fitting_params) # not sure if this is the function I want to use
+    estdict = estimate_response_matrix([imcube,], # not sure if this is the function I want to use
+                                       fitting_params,
+                                       processes=config_params.get_param('estimation', 'nproc', int)) 
 
     # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
-    phase = estdict['phase'][0] * fitting_params['pupil_analytic']
+    pupil = fitting_params['pupil_analytic'].astype(bool)
+    phase = estdict['phase'][0] * pupil
     amp = estdict['amp'][0]
+    amp_norm = amp / np.mean(amp[pupil])
 
-    phase_rms = rms(phase, fitting_params['pupil_analytic'].astype(bool)) # is pupil_analytic already boolean?
-    amp_rms = rms(amp, fitting_params['pupil_analytic'].astype(bool)) # NOT NORMALIZED PROPERLY
+    phase_rms = rms(phase, pupil)
+    amp_rms = rms(amp_norm, pupil)
+    amp_lnrms = rms(np.log(amp_norm), pupil)
+    strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
 
-    logger.info(f'Estimated phase RMS: {phase_rms}')
-    logger.info(f'Estimated amplitude RMS (meaningless until normalized): {amp_rms}')
-    #logger.info(f'Estimated Strehl: {strehl}')
+    logger.info(f'Estimated phase RMS: {phase_rms} (rad)')
+    logger.info(f'Estimated amplitude RMS: {amp_rms} (\%)')
+    logger.info(f'Estimated Strehl: {strehl}')
 
     if update_shmim:
         update_estimate_shmims(phase, amp, config_params)
@@ -249,17 +261,6 @@ def replace_symlink(symfile, newfile):
     if path.exists(symfile):
         remove(symfile)
     symlink(newfile, symfile)
-
-def parse_override_args(override_args):
-    '''
-    Map key1=val1 key2=val2 into dictionary, I guess
-    '''
-    keyval_pairs = [x.strip() for x in override_args.split(' ')]
-    argdict = {}
-    for keyval in keyval_pairs:
-        key, val = keyval.split('=')
-        argdict[key] = val
-    return argdict    
 
 class Configuration(configparser.ConfigParser):
 
@@ -373,7 +374,7 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
     
     focal_coords = get_coords(N, delta_focal)
     pupil_coords = get_coords(N, delta_pupil, center=True)
-    pupil_coords_physical = get_coords(N, delta_pupil_phys)
+    #pupil_coords_physical = get_coords(N, delta_pupil_phys)
     
     # analytic pupil mask
     pupil_analytic_upsampled = pupilfunc(delta_pupil_phys/10, N*10, extra_rot=pupilrot)[pupilparity]
@@ -410,3 +411,19 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
         'zbasis' : zbasis,
         'zkvals' : div_axial,
     }
+
+def validate_calibration_directory(config_params):
+    '''
+    Check that directory structure exists and is populated
+    '''
+    check_and_make = lambda path: mkdir(path) if not path.exists(path) else 0
+
+    calibpath = config_params.get_param('calibration', 'path', str)
+    check_and_make(calibpath)
+
+    subdirs = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
+               'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
+
+    for curdir in subdirs:
+        check_and_make(path.join(calibpath, curdir))
+

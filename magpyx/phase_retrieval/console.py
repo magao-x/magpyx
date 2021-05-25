@@ -5,9 +5,10 @@ To do:
 * specify separate delay after dm diversity via indi vs dm cmd via shmims
 X General way to override conf parameters
 X closed loop
-* function to set up directory structure from scratch
-* nproc should be set from conf file
-* npad should set the size of estrespM and everything that follows (reduce control matrix size) (or from fitting region??? yes. how is that specified?)
+X function to set up directory structure from scratch
+X npad should set the size of estrespM and everything that follows (reduce control matrix size) (or from fitting region??? yes. how is that specified?)
+X report Strehl
+X fix amplitude normalization
 
 Configuration:
 
@@ -87,17 +88,20 @@ Calibration:
             ...
 
 '''
-from os import path, symlink, remove, mkdir
+from os import path
 import argparse
 from datetime import datetime
 
 from astropy.io import fits
+import numpy as np
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-from .tools import close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot
+from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
+                    validate_calibration_directory, Configuration, replace_symlink, estimate_response_matrix,
+                    get_magaox_fitting_params)
 
 def console_close_loop():
     #argparse
@@ -113,6 +117,8 @@ def console_close_loop():
     if args.override is not None:
         override = parse_override_args(args.override)
         config_params.update_from_dict(override)
+
+    validate_calibration_directory(config_params)
 
     # recompute control matrix
     if not args.skip_ctrl:
@@ -138,6 +144,8 @@ def console_compute_control_matrix():
         override = parse_override_args(args.override)
         config_params.update_from_dict(override)
 
+    validate_calibration_directory(config_params)
+
     compute_control_matrix(config_params, write=True)
 
 def console_measure_response_matrix():
@@ -155,6 +163,8 @@ def console_measure_response_matrix():
         override = parse_override_args(args.override)
         config_params.update_from_dict(override)
 
+    validate_calibration_directory(config_params)
+
     calib_path = config_params.get_param('calibration', 'path', str)
     descr = args.descriptor
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -163,9 +173,8 @@ def console_measure_response_matrix():
     imcube = measure_response_matrix(config_params)
 
     outpath = path.join(calib_path, 'measrespM', f'measrespM_{descr}_{date}.fits')
-    if outpath is not None:
-        fits.writeto(outpath, imcube)
-        logger.info(f'Wrote interaction measurements to {outpath}')
+    fits.writeto(outpath, imcube)
+    logger.info(f'Wrote interaction measurements to {outpath}')
 
     # replace symlink
     sympath = path.join(calib_path, 'measrespM.fits')
@@ -188,6 +197,8 @@ def console_estimate_oneshot():
         override = parse_override_args(args.override)
         config_params.update_from_dict(override)
 
+    validate_calibration_directory(config_params)
+
     # do the thing
     estimate_oneshot(config_params, update_shmim=args.shmims, write_out=args.write)
 
@@ -207,6 +218,8 @@ def console_estimate_response_matrix():
     if args.override is not None:
         override = parse_override_args(args.override)
         config_params.update_from_dict(override)
+
+    validate_calibration_directory(config_params)
     
     calib_path = config_params.get_param('calibration', 'path', str)
     sympath_in = path.join(calib_path, 'measrespM.fits')
@@ -245,3 +258,14 @@ def console_estimate_response_matrix():
     # replace symlink
     sympath_out = path.join(calib_path, 'estrespM.fits')
     replace_symlink(sympath_out, outname)
+
+def parse_override_args(override_args):
+    '''
+    Map key1=val1 key2=val2 into dictionary, I guess
+    '''
+    keyval_pairs = [x.strip() for x in override_args.split(' ')]
+    argdict = {}
+    for keyval in keyval_pairs:
+        key, val = keyval.split('=')
+        argdict[key] = val
+    return argdict    

@@ -61,22 +61,24 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     # construct IF cube
     ifcube = get_ifcube_from_hmeas(hmeas, hmodes, hval)
 
-    # get SVD
-    wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube)
-
     # get DM and WFS maps and masks
-    print('IFCUBE:', ifcube.min(), ifcube.max())
     wfs_ctrl_map, wfs_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, threshold=wfsthresh)
     dm_ctrl_map, dm_ctrl_mask = get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=dmthresh)
+
+    # reduce ifcube to only include pixels in wfs_ctrl_mask
+    ifcube_active = ifcube[:,wfs_ctrl_mask]
+
+    # get SVD
+    wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
 
     # interpolate DM modes
     dmmodes_interp = interpolate_dm_modes(dmmodes, dm_ctrl_mask, dm_map, dm_mask, n=ninterp)
 
     # get control matrix
-    C = get_control_matrix(dmmodes_interp, wfsmodes, singvals, nmodes=nmodes)
+    ctrl = get_control_matrix(dmmodes_interp, wfsmodes, singvals, nmodes=nmodes)
 
     return {
-        'ifmat' : ifcube,
+        'ifmat' : ifcube_active,
         'wfsmap' : wfs_ctrl_map,
         'wfsmask' : wfs_ctrl_mask,
         'dmmap' : dm_ctrl_map,
@@ -84,7 +86,7 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
         'wfsmodes' : wfsmodes,
         'dmmodes' : dmmodes_interp,
         'singvals' : singvals,
-        'ctrlmat' : C
+        'ctrlmat' : ctrl
     }
 
 def get_control_matrix(dmmodes, wfsmodes, singvals, nmodes=None):
