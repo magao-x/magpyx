@@ -178,14 +178,13 @@ def measure_response_matrix(config_params):
     dm_cmds = np.concatenate([hmodes_sq, -hmodes_sq]) * hval
 
     logger.info(f'Taking measurements for interaction matrix...')
-    imcube = take_measurements_from_config(config_params, dm_cmds=dm_cmds, delay=config_params.get_param('diversity', 'delay', float))
+    imcube = take_measurements_from_config(config_params, dm_cmds=dm_cmds)
 
     return imcube.swapaxes(0,1)
 
 def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None):
 
     imcube = take_measurements_from_config(config_params,
-                                           delay=config_params.get_param('diversity', 'delay', float),
                                            client=client,
                                            dmstream=dmstream,
                                            camstream=camstream,

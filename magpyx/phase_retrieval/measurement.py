@@ -7,7 +7,7 @@ from ..imutils import register_images
 from ..utils import ImageStream, indi_send_and_wait
 from ..instrument import move_stage, take_dark
 
-def take_measurements_from_config(config_params, dm_cmds=None, delay=None, client=None, dmstream=None, camstream=None, darkim=None):
+def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, camstream=None, darkim=None):
 
     if client is None:
         # open indi client connection
@@ -25,6 +25,9 @@ def take_measurements_from_config(config_params, dm_cmds=None, delay=None, clien
         # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
         darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
 
+    dmdelay = config_params.get_param('diversity', 'dmdelay', float)
+    indidelay = config_params.get_param('diversity', 'indidelay', float)
+
     # measure
     div_type = config_params.get_param('diversity', 'type', str)
     if div_type.lower() == 'dm':
@@ -36,7 +39,8 @@ def take_measurements_from_config(config_params, dm_cmds=None, delay=None, clien
                                       config_params.get_param('diversity', 'navg', float),
                                       darkim=darkim,
                                       dm_cmds=dm_cmds,
-                                      delay=delay
+                                      dmdelay=dmdelay,
+                                      indidelay=indidelay
                                       )
     else: # stage diversity
         imcube = measure_stage_diversity(client,
@@ -47,11 +51,11 @@ def take_measurements_from_config(config_params, dm_cmds=None, delay=None, clien
                                 config_params.get_param('diversity', 'navg', float),
                                 darkim=darkim,
                                 dm_cmds=dm_cmds,
-                                delay=delay
+                                delay=dmdelay
                                 )
     return imcube
 
-def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nimages, dm_cmds=None, zero_dm=True, delay=None, improc='mean', darkim=None):
+def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nimages, dm_cmds=None, zero_dm=True, dmdelay=None, indidelay=None, improc='mean', darkim=None):
 
     # get the initial defocus set on the DM
     client.wait_for_properties([f'{device}.current_amps',])
@@ -73,7 +77,8 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
                                 
         # send INDI command to apply defocus to DM
         client[f'{device}.current_amps.0002'] = defocus0 + curdefocus
-        sleep(1.0)
+        if indidelay is not None:
+            sleep(indidelay)
 
         # loop over DM commands, and take measurements
         curims = []
@@ -81,8 +86,8 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
             dm_cmds = [np.zeros(dm_shape, dtype=dm_type),]
         for cmd in dm_cmds:
             dmstream.write(cmd.astype(dm_type))
-            if delay is not None:
-                sleep(delay)
+            if dmdelay is not None:
+                sleep(dmdelay)
             imlist = np.asarray(camstream.grab_many(nimages))
             if improc == 'register':
                 im = np.mean(register_images(imlist - darkim, upsample=10), axis=0)
@@ -95,10 +100,10 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
     if zero_dm:
         dmstream.write(np.zeros(dm_shape).astype(dmstream.buffer.dtype))
     client[f'{device}.current_amps.0002'] = defocus0
-    sleep(1.0)
+    if indidelay is not None:
+        sleep(indidelay)
     return np.squeeze(allims)
-
-
+    
 def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_positions, nimages, final_position=None, dm_cmds=None, zero_dm=True, delay=None, improc='mean', darkim=None):
     dm_shape = dmstream.grab_latest().shape
     dm_type = dmstream.buffer.dtype
@@ -106,6 +111,8 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
     # zero out the DM if requested
     if zero_dm:
         dmstream.write(np.zeros(dm_shape).astype(dm_type))
+        if delay is not None:
+            sleep(delay)
 
     if darkim is None:
         darkim = 0

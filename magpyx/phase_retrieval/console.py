@@ -2,7 +2,7 @@
 To do:
 * SYMLINKS AND DIRECTORY STRUCTURES
 * preset (maybe can use existing code for this: fwtelsim, fwscind, stagescibs, fwsci2, camsci2 settings, ??)
-* specify separate delay after dm diversity via indi vs dm cmd via shmims
+X specify separate delay after dm diversity via indi vs dm cmd via shmims
 X General way to override conf parameters
 X closed loop
 X function to set up directory structure from scratch
