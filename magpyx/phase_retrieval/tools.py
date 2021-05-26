@@ -8,6 +8,7 @@ from datetime import datetime
 
 from astropy.io import fits
 import numpy as np
+from skimage.filters.thresholding import threshold_otsu
 
 from ..utils import ImageStream, create_shmim
 from ..instrument import take_dark
@@ -25,19 +26,20 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-def measure_and_estimate_phase_vector(config_params, client, dmstream, camstream, darkim, wfsmask):
+def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None):
     '''
     wfsfunc for closed loop control: measure and return pupil-plane phase vector
     '''
-
     # take the measurement and run the estimator
-    estdict = estimate_oneshot(config_params, update_shmim=True, write_out=False,
+    estdict, fitting_params = estimate_oneshot(config_params, update_shmim=True, write_out=False,
                                client=client, dmstream=dmstream, camstream=camstream,
                                darkim=darkim)
 
     # remove ptt and return (I guess)
-    phase_pttrem = remove_plane(config_params['phase'][0], wfsmask)
-    return phase_pttrem[wfsmask]
+    # ugh, the wfsmask is defined within the fit region
+    fitting_slice = fitting_params['fitting_slice']
+    phase_pttrem = remove_plane(estdict['phase'][0][fitting_slice], wfsmask)
+    return phase_pttrem[wfsmask] 
 
 def measure_and_estimate_focal_field():
     '''
@@ -54,7 +56,7 @@ def close_loop(config_params):
     client.start()
 
     # open shmims
-    dmstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+    dmstream = ImageStream(config_params.get_param('control', 'dmctrlchannel', str))
     camname = config_params.get_param('camera', 'name', str)
     camstream = ImageStream(camname)
 
@@ -74,7 +76,13 @@ def close_loop(config_params):
 
     # get the wfs mask
     with fits.open(path.join(calibpath, 'wfsmask.fits')) as f:
-        wfsmask = f[0].data
+        wfsmask = f[0].data.astype(bool)
+
+    # dm actuator mapping
+    with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
+        dm_map = f[0].data
+    with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
+        dm_mask = f[0].data
 
     # set up the wfs function
     wfsfuncdict = {
@@ -87,7 +95,7 @@ def close_loop(config_params):
     }
     wfsfunc = measure_and_estimate_phase_vector
     
-    control.closed_loop(dmstream, ctrlmat, wfsfunc, niter=niter, gain=gain,
+    control.closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=niter, gain=gain,
                         leak=leak, delay=delay, paramdict=wfsfuncdict)
 
     # close all the things
@@ -126,11 +134,16 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
     npix = config_params.get_param('control', 'npix', int)
 
     # reduce measured data to npix region
-    shape = hmeas.shape[-1] # I'm assuming it's square, as always...
-    cen = shape//2
-    slicezyx = (slice(None,None),
-               slice(cen-npix//2,cen+npix//2),
-               slice(cen-npix//2,cen+npix//2))
+    fitting_params = get_magaox_fitting_params(camera=config_params.get_param('camera', 'name', str),
+                                            wfilter=config_params.get_param('diversity', 'wfilter', str),
+                                            mask=config_params.get_param('estimation', 'pupil', str),
+                                            N=config_params.get_param('estimation', 'N', int),
+                                            divtype=config_params.get_param('diversity', 'type', str),
+                                            divvals=config_params.get_param('diversity', 'values', float),
+                                            npad=config_params.get_param('estimation', 'npad', int),
+                                            nzernikes=config_params.get_param('estimation', 'nzernike', int))
+    fitting_slice = fitting_params['fitting_slice']
+    slicezyx = (slice(None,None),*fitting_slice)
     hmeas = hmeas[slicezyx]
 
     if nmodes is None:
@@ -160,6 +173,8 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
             # update symlinks
             sympath = path.join(calib_path, key+'.fits')
             replace_symlink(sympath, outname)
+
+    return ctrldict
 
 def measure_response_matrix(config_params):
 
@@ -202,27 +217,49 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
                                                nzernikes=config_params.get_param('estimation', 'nzernike', int))
     estdict = estimate_response_matrix([imcube,], # not sure if this is the function I want to use
                                        fitting_params,
-                                       processes=config_params.get_param('estimation', 'nproc', int)) 
+                                       processes=config_params.get_param('estimation', 'nproc', int))     
 
     # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
     pupil = fitting_params['pupil_analytic'].astype(bool)
-    phase = estdict['phase'][0] * pupil
     amp = estdict['amp'][0]
     amp_norm = amp / np.mean(amp[pupil])
 
-    phase_rms = rms(phase, pupil)
-    amp_rms = rms(amp_norm, pupil)
-    amp_lnrms = rms(np.log(amp_norm), pupil)
-    strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
+    # threshold phase based on amplitude? (reject phase values where amplitude is < some threshold)
+    thresh_amp = threshold_otsu(amp_norm)
+    threshold = config_params.get_param('control', 'ampthreshold', float)
+    amp_mask = amp_norm > (thresh_amp*threshold)
 
-    logger.info(f'Estimated phase RMS: {phase_rms} (rad)')
-    logger.info(f'Estimated amplitude RMS: {amp_rms} (\%)')
+    estdict['phase'][0] *= amp_mask
+    phase = estdict['phase'][0] * pupil
+
+    phase_rms = np.std(phase[pupil])#rms(phase, pupil)
+    amp_rms = np.std(amp_norm[pupil])#rms(amp_norm, pupil)
+    amp_lnrms = np.std(np.log(amp_norm)[pupil])#rms(np.log(amp_norm), pupil)
+    strehl = get_strehl(phase, amp_norm, pupil)
+    #strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
+
+    logger.info(f'Estimated phase RMS: {phase_rms:.3} (rad)')
+    logger.info(f'Estimated amplitude RMS: {amp_rms*100:.3} (%)')
     logger.info(f'Estimated Strehl: {strehl}')
 
     if update_shmim:
         update_estimate_shmims(phase, amp, config_params)
 
-    return estdict
+    return estdict, fitting_params
+
+def get_strehl(phase, amplitude, mask):
+    
+    Efield = amplitude * np.exp(1j*phase)
+    Efield /= np.sqrt(np.sum(Efield * Efield.conj()))
+
+    amp = np.abs(Efield)
+    phase = np.angle(Efield)
+    log_amp = np.log(amp)
+    varlogamp = np.var(log_amp[mask])
+
+    varphase = np.var(phase[mask])    
+    return np.exp(-varphase) * np.exp(-varlogamp)
+
 
 def update_estimate_shmims(phase, amp, config_params):
 
@@ -232,8 +269,8 @@ def update_estimate_shmims(phase, amp, config_params):
 
     try:
         # open shmims here
-        phasestream = ImageStream(phase_shmim_name)
-        ampstream = ImageStream(amp_shmim_name)
+        phasestream = ImageStream(phase_shmim_name, expected_shape=(N,N))
+        ampstream = ImageStream(amp_shmim_name, expected_shape=(N,N))
     except RuntimeError:
         logger.info(f'Failed to open shmims {phase_shmim_name} and {amp_shmim_name}. Trying to create...')
         # assume this means they need to be created
@@ -394,7 +431,7 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
     if divtype.lower() == 'dm':
         div_axial = defocus_rms_to_lateral_shift(-np.asarray(divvals)*1e-6, fnum)
     elif divtype.lower() == 'stage':
-        div_axial = np.asarray(divvals)
+        div_axial = np.asarray(divvals)*1e-3
     else:
         raise ValueError("divtype must be either 'dm' or 'stage'.")
     
@@ -407,6 +444,7 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
         'pupil_coords' : pupil_coords,
         'pupil_analytic' : pupil_analytic,
         'fitting_region' : fitting_region,
+        'fitting_slice' : fitting_slice,
         'zbasis' : zbasis,
         'zkvals' : div_axial,
     }
@@ -415,7 +453,7 @@ def validate_calibration_directory(config_params):
     '''
     Check that directory structure exists and is populated
     '''
-    check_and_make = lambda path: mkdir(path) if not path.exists(path) else 0
+    check_and_make = lambda cpath: mkdir(cpath) if not path.exists(cpath) else 0
 
     calibpath = config_params.get_param('calibration', 'path', str)
     check_and_make(calibpath)

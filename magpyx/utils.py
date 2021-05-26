@@ -92,11 +92,15 @@ class ImageStream(shmio.Image):
     '''
     SUCCESS_CODE = 0
 
-    def __init__(self, name):
+    def __init__(self, name, expected_shape=None):
         super().__init__()
         self.name = name
         self.is_open = False
         self.open()
+
+        if expected_shape is not None:
+            self.check_shape(expected_shape)
+
         self.buffer = np.array(self, copy=False).T
         self.naxis = self.md.naxis
         self.semindex = None
@@ -118,6 +122,13 @@ class ImageStream(shmio.Image):
             raise RuntimeError(f'Could not open shared memory image "{self.name}"!')
         else:
             self.is_open = True
+
+    def check_shape(self, expected_shape):
+        curshape = self.md.size
+        if list(curshape) != list(expected_shape):
+            logger.info(f'Got shape {curshape} but expected shape {expected_shape}. Destroying and re-creating.')
+            self.destroy()
+            self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
 
     @_is_open
     def close(self):

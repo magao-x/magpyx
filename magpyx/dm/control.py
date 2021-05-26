@@ -20,7 +20,7 @@ def collect_hadamard_interaction_matrix(dmstream, wfsfunc, paramdict={}):
     '''
     raise NotImplementedError('woops')
 
-def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., delay=None, paramdict={}):
+def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5, leak=0., delay=None, paramdict={}):
     '''
     Generalized function for (slow) leaky integrator closed-loop operations with shmims.
 
@@ -36,18 +36,23 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, niter=10, gain=0.5, leak=0., delay=N
     allresid = []
     for n in range(niter):
         # get WFS input
-        resid = wfsfunc(paramdict)
+        resid = wfsfunc(**paramdict)
+
+        print(f'Max/min: {resid.max()}, {resid.min()}')
 
         # update command
-        update = ctrlmat.dot(resid) # maybe
-        cmd = (1 - leak) * cmd - gain * update # also maybe
+        update_vec = ctrlmat.dot(resid)
+        update_cmd = dmutils.map_vector_to_square(update_vec, dm_map, dm_mask)
+        cmd = (1 - leak) * cmd - gain * update_cmd
+
+        print(f'Max/min: {cmd.max()}, {cmd.min()}')
 
         # keep track of some things
         allcmds.append(deepcopy(cmd))
         allresid.append(resid)
 
         # send command
-        dmstream.write(cmd)
+        dmstream.write(cmd.astype(dmstream.buffer.dtype))
         if delay is not None:
             sleep(delay)
 
@@ -131,7 +136,10 @@ def get_ifcube_from_hmeas(hmeas, hmodes, hval):
     # take the difference of the +/- measurements and normalize by the commanded amplitude hval
     hcube_norm = (hmeas[:shape[0]] - hmeas[shape[0]:]) / 2. / hval
 
-    return np.dot(hmodes, hcube_norm.reshape((shape[0],-1))).reshape((shape[0],*shape_wfs))
+    # inverse should just be H^T / n or something, so this is very lazy
+    hinv = np.linalg.inv(hmodes)
+
+    return np.dot(hinv, hcube_norm.reshape((shape[0],-1))).reshape((shape[0],*shape_wfs))
 
 def get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=0.5):
     '''

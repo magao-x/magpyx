@@ -1,14 +1,9 @@
 '''
 To do:
-* SYMLINKS AND DIRECTORY STRUCTURES
 * preset (maybe can use existing code for this: fwtelsim, fwscind, stagescibs, fwsci2, camsci2 settings, ??)
-X specify separate delay after dm diversity via indi vs dm cmd via shmims
-X General way to override conf parameters
-X closed loop
-X function to set up directory structure from scratch
-X npad should set the size of estrespM and everything that follows (reduce control matrix size) (or from fitting region??? yes. how is that specified?)
-X report Strehl
-X fix amplitude normalization
+* report iteration number when closed loop
+* move stage back to starting position when closed loop
+* explore if recon from hadamard modes (what if you overconstrain?)
 
 Configuration:
 
@@ -107,7 +102,7 @@ def console_close_loop():
     #argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
-    parser.add_argument('--skip_ctrl', '-s', type=bool, action='store_true', help='By default, the control matrix is always recomputed right before closing the loop. This flag skips this step.')
+    parser.add_argument('--skip_ctrl', '-s', action='store_true', help='By default, the control matrix is always recomputed right before closing the loop. This flag skips this step.')
     parser.add_argument('--override','-o', type=str, default=None, nargs='+', help='Space-delimited list of config parameters to override, set as section.option=value')
     args = parser.parse_args()
 
@@ -263,9 +258,10 @@ def parse_override_args(override_args):
     '''
     Map key1=val1 key2=val2 into dictionary, I guess
     '''
-    keyval_pairs = [x.strip() for x in override_args.split(' ')]
+    #print(override_args)
+    #keyval_pairs = [x.strip() for x in override_args.split(' ')]
     argdict = {}
-    for keyval in keyval_pairs:
+    for keyval in override_args:
         key, val = keyval.split('=')
         argdict[key] = val
     return argdict    
