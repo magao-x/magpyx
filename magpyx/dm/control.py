@@ -14,6 +14,10 @@ from skimage.filters import threshold_otsu
 
 from . import dmutils
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('control')
+
 def collect_hadamard_interaction_matrix(dmstream, wfsfunc, paramdict={}):
     '''
     Generalized function for (slow) collection of a +/- hadamard interaction matrix.
@@ -35,17 +39,19 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5,
     allcmds = []
     allresid = []
     for n in range(niter):
+        logger.info(f'Iteration: {n+1}/{niter}')
+
         # get WFS input
         resid = wfsfunc(**paramdict)
 
-        print(f'Max/min: {resid.max()}, {resid.min()}')
+        #print(f'Max/min: {resid.max()}, {resid.min()}')
 
         # update command
         update_vec = ctrlmat.dot(resid)
         update_cmd = dmutils.map_vector_to_square(update_vec, dm_map, dm_mask)
         cmd = (1 - leak) * cmd - gain * update_cmd
 
-        print(f'Max/min: {cmd.max()}, {cmd.min()}')
+        #print(f'Max/min: {cmd.max()}, {cmd.min()}')
 
         # keep track of some things
         allcmds.append(deepcopy(cmd))
@@ -215,7 +221,7 @@ def get_coupling_matrix(active_mask, dm_map, dm_mask, n=1):
 
     # define inactive map
     inactive_mask = ~active_mask.astype(bool) & dm_mask
-    nact = int(np.sum(dm_mask))
+    nact = int(np.sum(dm_map != 0))
 
     # get indices for distance calc later
     shape = dm_map.shape

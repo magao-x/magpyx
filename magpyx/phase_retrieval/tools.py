@@ -131,7 +131,7 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
     dmthresh = config_params.get_param('control', 'dmthreshold', float)
     wfsthresh = config_params.get_param('control', 'wfsthreshold', float)
     ninterp = config_params.get_param('control', 'ninterp', int)
-    npix = config_params.get_param('control', 'npix', int)
+    #npix = config_params.get_param('control', 'npix', int)
 
     # reduce measured data to npix region
     fitting_params = get_magaox_fitting_params(camera=config_params.get_param('camera', 'name', str),

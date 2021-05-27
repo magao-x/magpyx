@@ -1,88 +1,13 @@
 '''
 To do:
 * preset (maybe can use existing code for this: fwtelsim, fwscind, stagescibs, fwsci2, camsci2 settings, ??)
-* report iteration number when closed loop
-* move stage back to starting position when closed loop
-* explore if recon from hadamard modes (what if you overconstrain?)
-
-Configuration:
-
-/opt/MagAOX/config
-    - fdpr_dmncpc_camsci2.conf
-    ...
-
-In these files:
-
-[camera]
-name=camsci2
-region_roi_x = ?
-...
-exp = ?
-gain = ?
-
-[instrument] [not sure about this - ugh] [could move these into a separate preset conf: preset_fdpr_dmncpc_camsci2.conf or something???]
-fwpupil ?
-fwscind ?
-fwsci2 ?
-stagescibs ?
-fwtelsim ?
-
-[diversity]
-type=stage # or dm
-values = [-0.3, -0.2, 0.2, 0.3] # [-60, -40, 40, 60] # microns RMS defocus or mm stage movement (deltas or abs?)
-navg = 1
-ndark = 100
-dmdivchannel = dm02disp07  # maybe don't want this
-dmModes = wooferModes # used if type=dm
-camstage=stagesci2
-port=7624
-
-[estimation]
-nzernike=45
-npad=5
-pupil=bump_mask
-phase_shmim=fdpr_camsci2_phase
-amp_shim=fdpr_camsci2_amp
-nproc=3
-
-[calibration]
-path=/opt/MagAOX/calib/fdpr/dmncpc_camsci2
-dmpath=/opt/MagAOX/calib/dm/alpao_260
-
-[interaction]
-hval = 0.05 # microns
-Nact = 50
-dm_map =
-dm_mask = 
-
-[control]
-dmctrlchannel = dm02disp03 #??
-nmodes=65
-gain=0.5
-leak=0.
-niter=10
-dmthresh=??
-wfsthresh=??
-
-
-Calibration:
-
-(similar structure to cacao calibration products)
-/opt/MagAOX/calib/fdpr
-    - dmncpc_camsci2
-        - dmmap.fits [sym]
-        - dmmask.fits [sym]
-        - controlM.fits [sym]
-        - interM.fits [sym]
-        - dmmap
-            - dmmap_<date>.fits
-            ...
-        ...
-        - interM
-            - interM_<date>.fits
-            ...
-
+X report iteration number when closed loop
+X move stage back to starting position when closed loop
+* explore IF recon from hadamard modes (what if you overconstrain?)
+* way to load  old config (update symlinks to point to old product)
+* way to process old calib products
 '''
+
 from os import path
 import argparse
 from datetime import datetime

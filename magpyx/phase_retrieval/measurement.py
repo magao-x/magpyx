@@ -52,7 +52,8 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                 config_params.get_param('diversity', 'navg', float),
                                 darkim=darkim,
                                 dm_cmds=dm_cmds,
-                                delay=dmdelay
+                                delay=dmdelay,
+                                final_position=positions[0]
                                 )
     return imcube
 
