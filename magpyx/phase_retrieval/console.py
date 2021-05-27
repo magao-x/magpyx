@@ -27,7 +27,7 @@ def console_close_loop():
     #argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
-    parser.add_argument('--skip_ctrl', '-s', action='store_true', help='By default, the control matrix is always recomputed right before closing the loop. This flag skips this step.')
+    parser.add_argument('--recompute', '-c', action='store_true', help='Force a recomputation of the control matrix. Must be provided if any override args change the control matrix.')
     parser.add_argument('--override','-o', type=str, default=None, nargs='+', help='Space-delimited list of config parameters to override, set as section.option=value')
     args = parser.parse_args()
 
@@ -41,7 +41,7 @@ def console_close_loop():
     validate_calibration_directory(config_params)
 
     # recompute control matrix
-    if not args.skip_ctrl:
+    if args.recompute:
         compute_control_matrix(config_params)
 
     # close the loop
