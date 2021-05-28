@@ -797,13 +797,9 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
 
 def _process_phase_retrieval_mpfriendly(params, input_phase, xk_in, yk_in, focal_plane_blur, gpu, method, steps, options, psfs):
     return process_phase_retrieval(psfs, params, input_phase=input_phase, xk_in=xk_in, yk_in=yk_in,
-                                    focal_plane_blur=focal_plane_blur, gpu=gpu, method=method, steps=steps, options=options)
+                                   focal_plane_blur=focal_plane_blur, gpu=gpu, method=method, steps=steps, options=options)
 
 def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, processes=2):
-    '''
-    psfs, params, weights=None, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS
-
-    '''
     from functools import partial
     import multiprocessing as mp
     ctx = mp.get_context('spawn')
