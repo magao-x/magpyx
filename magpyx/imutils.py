@@ -7,8 +7,16 @@ except ImportError:
 
 import pyfftw
 from scipy.optimize import leastsq
-from skimage.feature import register_translation
+#from skimage.feature import register_translation
+from skimage.registration import phase_cross_correlation as register_translation
 from scipy.ndimage import shift
+
+from astropy.io import fits
+
+def write_to_fits(filename, arr):
+    if arr.dtype == bool:
+        arr = arr.astype(int)
+    fits.writeto(filename, arr)
 
 def rms(image,mask=None):
     return np.sqrt(np.mean(image[mask]**2))
@@ -48,7 +56,7 @@ def register_images(imlist, sliceyx=None, upsample=1):
     imreglist = []
     for im in imlist:
         # find shift
-        shiftyx, error, diffphase = register_translation(imref, im[sliceyx], upsample)
+        shiftyx, error, diffphase = register_translation(imref, im[sliceyx], upsample_factor=upsample)
         # shift to reference
         imreglist.append( shift(im[sliceyx], shiftyx) ) 
     return imreglist
@@ -56,7 +64,7 @@ def register_images(imlist, sliceyx=None, upsample=1):
 def get_gauss(sigma, shape, cenyx=None, xp=np):
     if cenyx is None:
         cenyx = xp.asarray([(shape[0])/2., (shape[1])/2.]) # no -1
-    yy, xx = xp.indices(shape) - cenyx[:,None,None]
+    yy, xx = xp.indices(shape).astype(float) - cenyx[:,None,None]
     g = xp.exp(-0.5*(yy**2+xx**2)/sigma**2)
     return g / xp.sum(g)
 
@@ -75,23 +83,49 @@ def gauss_convolve(image, sigma, force_real=True):
     g = get_gauss(sigma, image.shape, xp=xp)
     return convolve_fft(image, g, force_real=force_real)
 
-def fft2_shiftnorm(image, axes=None, norm='ortho'):
+def fft2_shiftnorm(image, axes=None, norm='ortho', shift=True):
+
     if axes is None:
         axes = (-2, -1)
-    if isinstance(image, np.ndarray):
-        t = pyfftw.builders.fft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
-        return np.fft.fftshift(t(),axes=axes)
+
+    if isinstance(image, np.ndarray): # CPU or GPU
+        xp = np
     else:
-        return cp.fft.fftshift(cp.fft.fft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+        xp = cp
+
+    if shift:
+        shiftfunc = xp.fft.fftshift
+        ishiftfunc = xp.fft.ifftshift
+    else:
+        shiftfunc = ishiftfunc = lambda x, axes=None: x
+
+    if isinstance(image, np.ndarray):
+        t = pyfftw.builders.fft2(ishiftfunc(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
+        return shiftfunc(t(),axes=axes)
+    else:
+        return shiftfunc(cp.fft.fft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm), axes=axes)
     
-def ifft2_shiftnorm(image, axes=None, norm='ortho'):
+def ifft2_shiftnorm(image, axes=None, norm='ortho', shift=True):
+
     if axes is None:
         axes = (-2, -1)
-    if isinstance(image, np.ndarray):
-        t = pyfftw.builders.ifft2(np.fft.ifftshift(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
-        return np.fft.fftshift(t(), axes=axes)
+
+    if isinstance(image, np.ndarray): # CPU or GPU
+        xp = np
     else:
-        return cp.fft.fftshift(cp.fft.ifft2(cp.fft.ifftshift(image, axes=axes), axes=axes, norm=norm), axes=axes)
+        xp = cp
+
+    if shift:
+        shiftfunc = xp.fft.fftshift
+        ishiftfunc = xp.fft.ifftshift
+    else:
+        shiftfunc = ishiftfunc = lambda x, axes=None: x
+
+    if isinstance(image, np.ndarray):
+        t = pyfftw.builders.ifft2(ishiftfunc(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
+        return shiftfunc(t(), axes=axes)
+    else:
+        return shiftfunc(cp.fft.ifft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm), axes=axes)
 
 def rot_matrix(angle_rad, y=0, x=0):
     # rotation about the origin
@@ -101,4 +135,16 @@ def rot_matrix(angle_rad, y=0, x=0):
 
 def rotate(cy, cx, angle, ceny=0, cenx=0):
     return np.dot(rot_matrix(np.deg2rad(angle), y=ceny, x=cenx).T, np.asarray([cy, cx, np.ones(len(cy))]))
+
+def shift_via_fourier(image, xk, yk, force_real=False,):
+    xp = get_array_module(image)
+    out =  ifft2_shiftnorm(fft2_shiftnorm(image, shift=False)*my_fourier_shift(xk, yk, image.shape, xp=xp), shift=False)
+    if force_real:
+        return out.real
+    else:
+        return out
+
+def pad(image, padlen):
+    val = np.median(image)
+    return np.pad(image, padlen, mode='constant', constant_values=val)
 

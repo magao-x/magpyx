@@ -53,7 +53,12 @@ setup(
                             'send_zeros_to_shmim=magpyx.utils:console_send_zeros_to_shmim',
                             'pyindi_send_preset=magpyx.presets:main',
                             'pyindi_send_triplet=magpyx.presets:send_indi_triplet',
-                            'auto_focus=magpyx.focus_stage:main']
+                            'auto_focus=magpyx.focus_stage:main',
+                            'fdpr_estimate_response=magpyx.phase_retrieval.console:console_estimate_response_matrix',
+                            'fdpr_measure_response=magpyx.phase_retrieval.console:console_measure_response_matrix',
+                            'fdpr_compute_control_matrix=magpyx.phase_retrieval.console:console_compute_control_matrix',
+                            'fdpr_close_loop=magpyx.phase_retrieval.console:console_close_loop',
+                            'fdpr_oneshot=magpyx.phase_retrieval.console:console_estimate_oneshot']
     },
     
     # List run-time dependencies here.  These will be installed by pip when
