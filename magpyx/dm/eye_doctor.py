@@ -287,7 +287,7 @@ def get_image_peak(arrlist):
     avgpeak = np.mean(peaks)
     return avgpeak
 
-def get_image_coresum(arrlist, radius=10):
+def get_image_coresum(arrlist, radius=10, cenyx=None, skip_frames=None):
     
     # background subtract and then average
     coresum = []
@@ -299,8 +299,14 @@ def get_image_coresum(arrlist, radius=10):
         # two step centroid: plop down a mask of 2*radius and then
         # center of mass to refine the centroid
         radius2 = 2*radius
-        ceny, cenx = np.where(im_bgsub == im_bgsub.max())
-        circ_centroid = draw.circle(ceny[0], cenx[0], radius2, im_bgsub.shape)
+        if cenyx is None:
+            ceny, cenx = np.where(im_bgsub == im_bgsub.max())
+            ceny = ceny[0]
+            cenx = cenx[0]
+        else:
+            ceny = cenyx[0]
+            cenx = cenyx[1]
+        circ_centroid = draw.circle(ceny, cenx, radius2, im_bgsub.shape)
         circmask_centroid = np.zeros(im_bgsub.shape, dtype=bool)
         circmask_centroid[circ_centroid] = 1
         y, x = center_of_mass(im_bgsub * circmask_centroid)
@@ -482,19 +488,24 @@ def grid_sweep(client, device, shmim, n, nimages, curbounds, nsteps, nrepeats, m
     steps = np.linspace(curbounds[0], curbounds[1], num=nsteps, endpoint=True)
     
     curves = np.zeros((nrepeats, nsteps))
+    allims = []
     for i in range( nrepeats):
         for j, s in enumerate(steps):
             # move
-            send_modes_and_wait(client, device, {f'{n:0>4}' : s})
-            #sleep(0.1)
+            for l in range(3):
+                send_modes_and_wait(client, device, {f'{n:0>4}' : s})
+            #sleep(0.5)
             #measure
+            if metric_dict.get('skip_frames', None) is not None:
+                shmim.grab_many(metric_dict['skip_frames']) # skip an image
             images = shmim.grab_many(nimages)
+            allims.append(np.mean(images,axis=0))
             #metric
             curves[i, j] = metric(images, **metric_dict)
 
     # skip processing and just pass the metric values back
     if debug:
-        return steps, curves
+        return steps, curves, allims
 
     if skind == 'mean':
         # get the mean min
@@ -817,6 +828,8 @@ def console_modal():
     parser.add_argument('--nsteps', type=int, default=20, help='Number of points to sample in grid search [Default: 20]')
     parser.add_argument('--nrepeats', type=int, default=3, help='Number of sweeps [Default: 3]')
     parser.add_argument('--nimages', type=int, default=1, help='Number of images to collect from shmim [Default: 1]')
+    parser.add_argument('--ceny', type=int, default=None, help='Fix the PSF centroid (y value)')
+    parser.add_argument('--cenx', type=int, default=None, help='Fix the PSF centroid (x value')
     parser.add_argument('--reset',  action='store_true', help='Ignore the current value of the mode and optimize about 0')
 
     args = parser.parse_args()
@@ -829,9 +842,13 @@ def console_modal():
     shmim = ImageStream(args.shmim)
 
     # run eye doctor
+    if (args.ceny is not None) and (args.cenx is not None):
+        cenyx = (args.ceny, args.cenx)
+    else:
+        cenyx = None
     eye_doctor(client, args.device, shmim, args.nimages, [args.mode,], [-args.range/2., args.range/2], search_kind='grid',
                search_dict={'nsteps' : args.nsteps, 'nrepeats' : args.nrepeats},
-               metric=get_image_coresum, metric_dict={'radius' : args.core},
+               metric=get_image_coresum, metric_dict={'radius' : args.core, 'cenyx' : cenyx},
                curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset)
 
 def console_comprehensive():
@@ -857,6 +874,9 @@ def console_comprehensive():
     parser.add_argument('--nclusterrepeats', type=int, default=1, help='Number of times to repeat a cluster of modes [Default: 1]')
     parser.add_argument('--nseqrepeat', type=int, default=1, help='Number of times to repeat the optimization of all modes [Default: 1]')
     parser.add_argument('--nimages', type=int, default=1, help='Number of images to collect from shmim [Default: 1]')
+    parser.add_argument('--ceny', type=int, default=None, help='Fix the PSF centroid (y value)')
+    parser.add_argument('--cenx', type=int, default=None, help='Fix the PSF centroid (x value)')
+    parser.add_argument('--skip', type=int, default=None, help='Number of frames to skip (Default: None)')
     parser.add_argument('--reset',  action='store_true', help='Ignore the current value of the mode and optimize about 0')
     parser.add_argument('--ignorefocus', action='store_true',
         help='By default, if more than one mode is being optimized, the eye doctor starts with focus. Use this option to turn this off.')
@@ -878,10 +898,17 @@ def console_comprehensive():
         focus_first = True
 
     # run eye doctor
+    if (args.ceny is not None) and (args.cenx is not None):
+        cenyx = (args.ceny, args.cenx)
+    else:
+        cenyx = None
     eye_doctor_comprehensive(client, args.device, shmim, args.nimages, modes=modes, bounds=[-args.range/2., args.range/2], search_kind='grid',
-                             search_dict={'nsteps' : args.nsteps, 'nrepeats' : args.nrepeats}, metric=get_image_coresum, metric_dict={'radius' : args.core},
+                             search_dict={'nsteps' : args.nsteps, 'nrepeats' : args.nrepeats}, metric=get_image_coresum, metric_dict={'radius' : args.core,
+                             'cenyx' : cenyx, 'skip_frames' : args.skip},
                              ncluster=5, nrepeat=args.nclusterrepeats, nseqrepeat=args.nseqrepeat, randomize=True,
                              curr_prop='current_amps', targ_prop='target_amps', baseline=not args.reset, focus_first=focus_first)
+    shmim.close()
+    client.stop()
 
 def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
     '''
