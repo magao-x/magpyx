@@ -48,6 +48,8 @@ setup(
                             'dm_zero_all_modes=magpyx.dm.eye_doctor:console_zero_all_modes',
                             'dm_eye_doctor_update_flat=magpyx.dm.eye_doctor:console_update_flat',
                             'dm_send_poke=magpyx.utils:console_send_dm_poke',
+                            'tweeter_V2um=magpyx.utils:console_tweeter_V2um',
+                            'tweeter_um2V=magpyx.utils:console_tweeter_um2V',
                             'send_fits_to_shmim=magpyx.utils:console_send_fits_to_shmim',
                             'send_shmim_to_fits=magpyx.utils:console_send_shmim_to_fits',
                             'send_zeros_to_shmim=magpyx.utils:console_send_zeros_to_shmim',
