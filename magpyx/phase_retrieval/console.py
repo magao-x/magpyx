@@ -166,7 +166,9 @@ def console_estimate_response_matrix():
                                                nzernikes=config_params.get_param('estimation', 'nzernike', int),
     )
 
-    estdict = estimate_response_matrix(image_cube, fitting_params)
+    estdict = estimate_response_matrix(image_cube, fitting_params,
+                                       processes=config_params.get_param('estimation', 'nproc', int),
+                                       gpus=config_params.get_param('estimation', 'gpus', int))
     estrespM = np.asarray(estdict['phase']) * fitting_params['pupil_analytic']
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")

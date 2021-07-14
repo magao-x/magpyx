@@ -18,6 +18,7 @@ from copy import deepcopy
 from collections import OrderedDict
 from functools import partial
 import multiprocessing as mp
+from time import sleep
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
@@ -796,17 +797,102 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
     }
 
 def _process_phase_retrieval_mpfriendly(params, input_phase, xk_in, yk_in, focal_plane_blur, gpu, method, steps, options, psfs):
-    return process_phase_retrieval(psfs, params, input_phase=input_phase, xk_in=xk_in, yk_in=yk_in,
-                                   focal_plane_blur=focal_plane_blur, gpu=gpu, method=method, steps=steps, options=options)
+    #psfs, gpu_id = psfs_gpus
+    #with cp.cuda.device.Device(gpu_id):
+    out = process_phase_retrieval(psfs, params, input_phase=input_phase, xk_in=xk_in, yk_in=yk_in,
+                                focal_plane_blur=focal_plane_blur, gpu=gpu, method=method, steps=steps, options=options)
+    return out
 
-def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, processes=2):
+def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, gpus=None, processes=2):
     from functools import partial
     import multiprocessing as mp
-    ctx = mp.get_context('spawn')
+    mp.set_start_method('spawn')
 
+    # TO DO: figure out if this still needs to be sequential or can be the original multiprocess_phase_retrieval
     mpfunc = partial(_process_phase_retrieval_mpfriendly, params, input_phase, xk_in, yk_in,
                      focal_plane_blur, gpu, method, steps, options)
 
-    with ctx.Pool(processes=processes) as p:
-        results = p.map(mpfunc, allpsfs)
-    return results
+    # There's a weird possibly memory-related issue that prevents us from simply
+    # splitting the full allpsfs hypercube across the processes for multiprocessing
+    # using a Pool object. So I've implemented my own queue and worker system here.
+
+    # available GPUs for processing
+    if gpus is None:
+        gpus = [0,]
+
+    # assign multiple processes per GPU
+    gpu_list = gpus * processes
+    ntot = len(allpsfs)
+
+    # make the queue and pass all jobs in
+    mpqueue = GPUQueue(gpu_list, mpfunc)
+    for (i, psfcube) in enumerate(allpsfs):
+        #print(psfcube.shape)
+        mpqueue.add([i, psfcube])
+
+    # check for completion every second
+    while len(mpqueue.raw_results) < n:
+        sleep(1)
+
+    # get the results back in order
+    allresults = mpqueue.get_sorted_results()
+    mpqueue.terminate()
+
+    return allresults
+
+class GPUWorker(mp.Process):
+    def __init__(self, queue_in, queue_out, gpu_id, func):
+        mp.Process.__init__(self, args=(queue_in,))
+        self.queue_in = queue_in
+        self.queue_out = queue_out
+        self.gpu_id = gpu_id
+        self.func = func
+        self.logger = mp.get_logger()
+        
+    def run(self):
+        with cp.cuda.device.Device(self.gpu_id):
+            while True:
+                task_id, task = self.queue_in.get()
+                
+                result = self.func(task)
+        
+                #self.logger.info(f'{self.gpu_id} got a task.')
+                self.queue_out.put([task_id, result])
+            
+class GPUQueue(object):
+    def __init__(self, gpu_list, func):
+        
+        self._queue_in = mp.Queue()
+        self._queue_out = mp.Queue()
+        self._results = []
+        
+        # make and start a worker for each entry in gpu_list
+        self.workers = []
+        for gpu in gpu_list:
+            self.workers.append(GPUWorker(self._queue_in, self._queue_out, gpu, func))
+        for w in self.workers:
+            w.start()
+
+    def add(self, task):
+        self._queue_in.put(task)
+            
+    @property
+    def raw_results(self):
+        '''
+        Grab the unsorted results from the worker queue
+        '''
+        while not self._queue_out.empty():
+            self._results.append(self._queue_out.get_nowait())
+        return self._results
+    
+    def get_sorted_results(self):
+        results = self.raw_results
+        sort_idx = np.asarray([r[0] for r in results])
+        return np.asarray([r[1] for r in results])[sort_idx]
+            
+    def terminate(self, timeout=5):
+        for w in self.workers:
+            w.terminate()
+            w.join(timeout=timeout)
+            w.close()
+    

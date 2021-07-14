@@ -217,7 +217,8 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
                                                nzernikes=config_params.get_param('estimation', 'nzernike', int))
     estdict = estimate_response_matrix([imcube,], # not sure if this is the function I want to use
                                        fitting_params,
-                                       processes=config_params.get_param('estimation', 'nproc', int))     
+                                       processes=config_params.get_param('estimation', 'nproc', int),
+                                       gpus=config_params.get_param('estimation', 'gpus', int))     
 
     # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
     pupil = fitting_params['pupil_analytic'].astype(bool)
@@ -287,9 +288,9 @@ def update_estimate_shmims(phase, amp, config_params):
     phasestream.close()
     ampstream.close()
 
-def estimate_response_matrix(image_cube, params, processes=2):
+def estimate_response_matrix(image_cube, params, processes=2, gpus=None):
     # do all the processing
-    rlist = multiprocess_phase_retrieval(image_cube, params, processes=processes)
+    rlist = multiprocess_phase_retrieval(image_cube, params, processes=processes, gpus=gpus)
     # turn list of dictionaries into dictionary of lists
     return {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
