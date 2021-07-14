@@ -831,7 +831,7 @@ def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, 
         mpqueue.add([i, psfcube])
 
     # check for completion every second
-    while len(mpqueue.raw_results) < n:
+    while len(mpqueue.raw_results) < ntot:
         sleep(1)
 
     # get the results back in order
