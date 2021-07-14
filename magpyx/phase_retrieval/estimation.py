@@ -628,6 +628,13 @@ DEFAULT_STEPS = [
     {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : very_fine, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
 ]
 
+# copy DEFAULT_STEPS but disable (x,y) fitting
+STEPS_NOXY = deepcopy(DEFAULT_STEPS)
+STEPS_NOXY.pop(0)
+for step in STEPS_NOXY:
+    step['xk'] =  step['yk'] = False
+
+
 def estimate_phase_from_measured_psfs(meas_psfs, param_dict, pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phase, weighting, arg_options={}, options={}, method='L-BFGS-B', jac=True):
     '''
     Perform a single step of the (normally multi-step) estimation routine
@@ -806,7 +813,11 @@ def _process_phase_retrieval_mpfriendly(params, input_phase, xk_in, yk_in, focal
 def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, gpus=None, processes=2):
     from functools import partial
     import multiprocessing as mp
-    mp.set_start_method('spawn')
+
+    try:
+        mp.set_start_method('spawn')
+    except RuntimeError as e:
+        logger.warning(e)
 
     # TO DO: figure out if this still needs to be sequential or can be the original multiprocess_phase_retrieval
     mpfunc = partial(_process_phase_retrieval_mpfriendly, params, input_phase, xk_in, yk_in,
@@ -814,7 +825,8 @@ def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, 
 
     # There's a weird possibly memory-related issue that prevents us from simply
     # splitting the full allpsfs hypercube across the processes for multiprocessing
-    # using a Pool object. So I've implemented my own queue and worker system here.
+    # using a Pool object (small inputs work, large inputs result in GPU blocking).
+    # So I've implemented my own queue and worker system here.
 
     # available GPUs for processing
     if gpus is None:

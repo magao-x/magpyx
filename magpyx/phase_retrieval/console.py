@@ -168,7 +168,8 @@ def console_estimate_response_matrix():
 
     estdict = estimate_response_matrix(image_cube, fitting_params,
                                        processes=config_params.get_param('estimation', 'nproc', int),
-                                       gpus=config_params.get_param('estimation', 'gpus', int))
+                                       gpus=config_params.get_param('estimation', 'gpus', int),
+                                       fix_xy_to_first=config_params.get_param('interaction', 'fix_xy_to_first', bool))
     estrespM = np.asarray(estdict['phase']) * fitting_params['pupil_analytic']
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")

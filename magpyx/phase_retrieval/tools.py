@@ -18,7 +18,7 @@ from ..imutils import rms, write_to_fits, remove_plane
 
 from purepyindi import INDIClient
 
-from .estimation import multiprocess_phase_retrieval, get_coords, arbitrary_basis, gauss_convolve, defocus_rms_to_lateral_shift, downscale_local_mean
+from .estimation import multiprocess_phase_retrieval, get_coords, arbitrary_basis, gauss_convolve, defocus_rms_to_lateral_shift, downscale_local_mean, DEFAULT_STEPS, STEPS_NOXY
 from .. import pupils
 from .measurement import take_measurements_from_config
 
@@ -288,9 +288,25 @@ def update_estimate_shmims(phase, amp, config_params):
     phasestream.close()
     ampstream.close()
 
-def estimate_response_matrix(image_cube, params, processes=2, gpus=None):
+def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_to_first=False):
+    '''
+    A thin wrapper around estimation.multiprocess_phase_retrieval.
+
+    If fix_xy_to_first==True, this will do the regular fit to the first set of images in the stack,
+    and then fix that value for the remainder of the fits. Use case: tip/tilt is not orthogonal to the
+    Hadamard modes, so you don't want to independently fit that and remove it from the phase solution.
+    '''
+    if fix_xy_to_first:
+        logger.info('Fitting (xk, yk) from first image to fix for all other estimates.')
+        r0 = multiprocess_phase_retrieval([image_cube[0],], params, processes=processes, gpus=gpus)
+        xk = r0[0]['param_dict']['xk'][0]
+        yk = r0[0]['param_dict']['yk'][0]
+        steps = STEPS_NOXY
+    else:
+        steps = DEFAULT_STEPS
+        xk = yk = None
     # do all the processing
-    rlist = multiprocess_phase_retrieval(image_cube, params, processes=processes, gpus=gpus)
+    rlist = multiprocess_phase_retrieval(image_cube, params, processes=processes, gpus=gpus, steps=steps, xk_in=xk, yk_in=yk)
     # turn list of dictionaries into dictionary of lists
     return {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
