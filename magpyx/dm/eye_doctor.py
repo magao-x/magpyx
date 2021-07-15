@@ -94,7 +94,7 @@ def zero_dm(client, device):
     '''
     client.wait_for_properties([f'{device}.current_amps', f'{device}.target_amps',], timeout=10)
     nmodes = len(client.devices[device].properties['current_amps'].elements)
-    send_modes_and_wait(client, device, {m:0 for m in range(nmodes)})
+    send_modes_and_wait(client, device, {m:0 for m in range(nmodes)}, tol=1e-2)
 
 def send_modes_and_wait(client, device, mode_targ_dict, tol=1e-3, wait_for_properties=True, timeout=10):
     '''
@@ -1033,8 +1033,8 @@ def console_update_flat():
     else:
         raise ValueError('Unknown DM provided. Must be one of "woofer", "tweeter", "ncpc", or "kilo".')
 
-    logger.info(f"Cleared all modes on {device}.")
     zero_dm(client, device)
+    logger.info(f"Cleared all modes on {device}.")
 
     if args.clearall:
         channels = [os.path.basename(c).split('.')[0] for c in sorted(glob(f'/milk/shm/{shmim}[0-9]*'))]
@@ -1043,10 +1043,13 @@ def console_update_flat():
             logger.info(f"Zeroed shmim {c}.")
 
     # toggle reload flat
-    status_dict = {f'{dmdevice}.flat.target': { 'value': 'flat.fits'}}
-    client.wait_for_state(status_dict, wait_for_properties=True, timeout=10)
+    #client.wait_for_properties([f'{dmdevice}.flat',f'{dmdevice}.flat_set'], timeout=10)
+    client[f'{dmdevice}.flat.default'] = indi.SwitchState.ON
+    sleep(1)
+    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.ON
     sleep(3) # I don't know why I need this.
     logger.info(f"Reloaded flat on {dmdevice}.")
+    client.stop()
 
 if __name__ == '__main__':
     pass
