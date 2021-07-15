@@ -832,6 +832,10 @@ def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, 
     if gpus is None:
         gpus = [0,]
 
+    # with a single GPU, parsing the config file will yield an int instead
+    if isinstance(gpus, int):
+        gpus = [gpus,]
+
     # assign multiple processes per GPU
     gpu_list = gpus * processes
     ntot = len(allpsfs)
@@ -866,6 +870,7 @@ class GPUWorker(mp.Process):
             while True:
                 task_id, task = self.queue_in.get()
                 
+                logger.info(f'Worker {self} starting task {task_id}.')
                 result = self.func(task)
         
                 #self.logger.info(f'{self.gpu_id} got a task.')
