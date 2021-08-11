@@ -435,7 +435,7 @@ def plot_latency(dm, filepath=None):
     lat = np.loadtxt(filepath)
     fig, ax = plt.subplots(1,1, figsize=(6,4.5))
     ax.scatter(lat[:,1], lat[:,2], s=1)
-    ax.set_xlabel('Time (ms)')
+    ax.set_xlabel('Time (us)')
     ax.set_ylabel('Response')
     fig.tight_layout()
 
