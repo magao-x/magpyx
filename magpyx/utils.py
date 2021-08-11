@@ -103,6 +103,7 @@ class ImageStream(shmio.Image):
             self.check_shape(expected_shape)
 
         self.buffer = np.array(self, copy=False).T
+        self.dtype = self.buffer.dtype
         self.naxis = self.md.naxis
         self.semindex = None
 
@@ -118,7 +119,7 @@ class ImageStream(shmio.Image):
         return np.array(self.buffer[start:stop:step], copy=True)
 
     def write(self, arr):
-        return self._write(np.ascontiguousarray(arr))
+        return self._write(np.ascontiguousarray(arr, dtype=self.dtype))
 
     def open(self):
         ret = super().open(self.name)
