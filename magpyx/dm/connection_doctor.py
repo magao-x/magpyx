@@ -199,6 +199,15 @@ def display_actuator_connections(filename=default_mapfile):
 
     return fig, ax
 
+def get_actuator_connections(filename=default_mapfile):
+    act_mapping = read_actuator_connection_mapping(filename=filename)
+    numeric_mapping = np.zeros(2040)
+    conn_types = np.unique(act_mapping)
+    for i, c in enumerate(conn_types):
+        numeric_mapping[act_mapping == c] = i + 1
+        
+    return map_vector_to_square_2K(numeric_mapping), conn_types
+
 def display_interconnect_connections(connector, actuator_mapfile=default_mapfile, ax=None, flagged_acts=None):
 
     if ax is None:

@@ -246,5 +246,24 @@ def console_send_zeros_to_shmim():
 
     send_zeros_to_shmim(args.shmim_name)
 
+
+def console_tweeter_um2V():
+    from .dm import dmutils
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('um', type=float, help='Command in microns to convert to voltage send to tweeter DM')
+    args = parser.parse_args()
+    V = dmutils.tweeter_um_to_V(args.um)
+    print(f'{V:.2f} Volts')
+
+def console_tweeter_V2um():
+    from .dm import dmutils
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('V', type=float, help='Command in V to convert into microns on tweeter DM')
+    args = parser.parse_args()
+    um = dmutils.tweeter_V_to_um(args.V)
+    print(f'{um:.2f} um')
+
 if __name__ == '__main__':
     pass

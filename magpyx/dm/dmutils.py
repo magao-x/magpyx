@@ -193,3 +193,25 @@ def get_grid_cmds(dm_shape, ngrid, val, do_plusminus=True):
 def get_cmat(ifmat, n_threshold=50):
     cmat, threshold, U, s, Vh = pseudoinverse_svd(ifmat, n_threshold=n_threshold)
     return cmat
+
+def get_tweeter_calib(filepath='/opt/MagAOX/calib/dm/bmc_2k/bmc_2k_userconfig.txt'):
+    calibvals = []
+    with open(filepath) as f:
+        for line in f.readlines():
+            calibvals.append(line.split(' ')[0].strip())
+    gain = float(calibvals[0])
+    volfac = float(calibvals[1])
+    maxV = 210 # eventually integrated in calib file, but need to update 2k ctrl to handle 3 lines in calib file
+    return gain, volfac, maxV
+
+def tweeter_um_to_V(cmd, gain=None, volfac=None, maxV=None):
+    if None in [gain, volfac, maxV]:
+        gain, volfac, maxV = get_tweeter_calib()
+    if cmd > 0:
+        raise ValueError('cmds in um must be < 0.')
+    return np.sqrt(volfac / gain * cmd) * maxV
+
+def tweeter_V_to_um(V, gain=None, volfac=None, maxV=None):
+    if None in [gain, volfac, maxV]:
+        gain, volfac, maxV = get_tweeter_calib()
+    return gain / volfac * (V/maxV)**2
