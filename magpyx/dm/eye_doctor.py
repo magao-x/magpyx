@@ -440,7 +440,7 @@ def move_measure_metric(val, client, device, shmim, nmode, nimages, metric, metr
 
     # move
     send_modes_and_wait(client, device, {f'{nmode:0>4}' : val})
-    #sleep(0.1)
+    sleep(0.1)
     # measure
     images = shmim.grab_many(nimages)
     # metric

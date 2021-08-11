@@ -94,6 +94,7 @@ class ImageStream(shmio.Image):
 
     def __init__(self, name, expected_shape=None):
         super().__init__()
+        self._write = super().write
         self.name = name
         self.is_open = False
         self.open()
@@ -115,6 +116,9 @@ class ImageStream(shmio.Image):
 
     def __getitem__(self, start, stop, step):
         return np.array(self.buffer[start:stop:step], copy=True)
+
+    def write(self, arr):
+        return self._write(np.ascontiguousarray(arr))
 
     def open(self):
         ret = super().open(self.name)
@@ -196,7 +200,7 @@ def send_shmim_to_fits(shmim_name, fitsfile, nimages=1):
 
 def send_zeros_to_shmim(shmim_name):
     with ImageStream(shmim_name) as shmim:
-        zeros = np.zeros_like(shmim.buffer)
+        zeros = np.zeros_like(shmim.buffer).T
         shmim.write(zeros)
 
 def console_send_dm_poke():
