@@ -811,6 +811,10 @@ def _process_phase_retrieval_mpfriendly(params, input_phase, xk_in, yk_in, focal
     return out
 
 def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, gpus=None, processes=2):
+    '''
+    gpus = list of GPUs to use, for example: [0,1,2]
+    processes = number of processes PER GPU
+    '''
     from functools import partial
     import multiprocessing as mp
 

@@ -9,7 +9,7 @@ import pyfftw
 from scipy.optimize import leastsq
 #from skimage.feature import register_translation
 from skimage.registration import phase_cross_correlation as register_translation
-from scipy.ndimage import shift
+from scipy.ndimage import shift, center_of_mass
 
 from astropy.io import fits
 
@@ -46,6 +46,24 @@ def rescale_and_pad(image, scale_factor, pad_to):
     padding = ((int(np.ceil(rough_pads[0])), int(np.floor(rough_pads[0]))),
                (int(np.ceil(rough_pads[1])), int(np.floor(rough_pads[1]))))
     return np.pad(rescaled, padding, 'constant', constant_values=0)
+
+def slice_to_valid_shape(image, cenyx, Ndesired):
+    '''
+    Slice to a shape about centered on cenyx, but allow
+    cenyx to shift to respect the boundaries of the image.
+    '''
+    Ny, Nx = image.shape
+    
+    if (Ndesired > Ny) or (Ndesired > Nx):
+        raise ValueError("Cannot slice to a shape greater than input image shape.")
+    
+    ceny_valid = np.clip(cenyx[0], Ndesired/2., Ny-Ndesired/2.)
+    cenx_valid = np.clip(cenyx[1], Ndesired/2., Nx-Ndesired/2.)
+
+    sliceyx = (slice(int(ceny_valid - Ndesired/2.), int(ceny_valid + Ndesired/2.)),
+              slice(int(cenx_valid - Ndesired/2.), int(cenx_valid + Ndesired/2.)))
+    
+    return image[sliceyx]
 
 def register_images(imlist, sliceyx=None, upsample=1):
     if sliceyx is None:

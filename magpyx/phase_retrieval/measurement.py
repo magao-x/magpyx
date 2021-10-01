@@ -3,9 +3,13 @@ from time import sleep
 
 from purepyindi import INDIClient
 
-from ..imutils import register_images
+from ..imutils import register_images, slice_to_valid_shape, center_of_mass
 from ..utils import ImageStream, indi_send_and_wait
 from ..instrument import move_stage, take_dark
+
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('fdpr')
 
 def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, camstream=None, darkim=None):
 
@@ -52,9 +56,23 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                 config_params.get_param('diversity', 'navg', float),
                                 darkim=darkim,
                                 dm_cmds=dm_cmds,
-                                delay=dmdelay,
+                                dmdelay=dmdelay,
                                 final_position=positions[0]
                                 )
+    # clip if needed
+    shape = imcube.shape
+    N = config_params.get_param('estimation', 'N', int)
+    if N < shape[1]: # assume the camera image is square
+        logger.info(f'Expected shape {N}x{N} but got shape {shape[1:]}. Clipping to {N}x{N} about center of mass.')
+        imcube_reduced = []
+        for im in imcube:
+            com = center_of_mass(im)
+            newim = slice_to_valid_shape(im, com, N)
+            imcube_reduced.append(newim)
+        imcube = np.asarray(imcube_reduced)
+    if N > shape[1]: # assume the camera image is square
+        logger.warning(f'Camera frames are smaller than expected. Expected {N}x{N} but got {shape[1:]}.')
+
     return imcube
 
 def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nimages, dm_cmds=None, restore_dm=True, dmdelay=None, indidelay=None, improc='mean', darkim=None):
@@ -90,9 +108,13 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
             dm_cmds = [np.zeros(dm_shape, dtype=dm_type) + curcmd,]
         for cmd in dm_cmds:
             dmstream.write(cmd.astype(dm_type))
+            cnt0 = camstream.md.cnt0 # grab the current camera frame number
             if dmdelay is not None:
-                sleep(dmdelay)
-            imlist = np.asarray(camstream.grab_many(nimages))
+                #sleep(dmdelay)
+                newcnt0 = cnt0 + dmdelay # expected camera frame number for this DM command
+            else:
+                newcnt0 = None # don't wait otherwise
+            imlist = np.asarray(camstream.grab_many(nimages, cnt0_min=newcnt0))
             if improc == 'register':
                 im = np.mean(register_images(imlist - darkim, upsample=10), axis=0)
             else:
@@ -108,7 +130,7 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
         sleep(indidelay)
     return np.squeeze(allims)
 
-def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_positions, nimages, final_position=None, dm_cmds=None, restore_dm=True, delay=None, improc='mean', darkim=None):
+def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_positions, nimages, final_position=None, dm_cmds=None, restore_dm=True, dmdelay=None, improc='mean', darkim=None):
     dm_shape = dmstream.grab_latest().shape
     dm_type = dmstream.buffer.dtype
     
@@ -134,9 +156,13 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
             dm_cmds = [np.zeros(dm_shape, dtype=dm_type) + curcmd,]
         for cmd in dm_cmds:
             dmstream.write(cmd.astype(dm_type))
-            if delay is not None:
-                sleep(delay)
-            imlist = np.asarray(camstream.grab_many(nimages))
+            cnt0 = camstream.md.cnt0 # grab the current camera frame number
+            if dmdelay is not None:
+                #sleep(dmdelay)
+                newcnt0 = cnt0 + dmdelay # expected camera frame number for this DM command
+            else:
+                newcnt0 = None # don't wait otherwise
+            imlist = np.asarray(camstream.grab_many(nimages, cnt0_min=newcnt0))
             if improc == 'register':
                 im = np.mean(register_images(imlist - darkim, upsample=10), axis=0)
             else:
