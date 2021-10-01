@@ -154,7 +154,13 @@ class ImageStream(shmio.Image):
             return np.array(self.buffer[cnt1], copy=True)
 
     @_is_open
-    def grab_many(self, n):
+    def grab_many(self, n, cnt0_min=None):
+        '''
+        Grab the next n frames.
+
+        If cnt0_min is set, wait until cnt0 reaches this value,
+        and then start collecting frames.
+        '''
     	# find a free semaphore to wait on
         if self.semindex is None:
             self.semindex = self.getsemwaitindex(1)
@@ -166,6 +172,8 @@ class ImageStream(shmio.Image):
         while i < n:
         	# collect each new image
             self.semwait(self.semindex)
+            if (cnt0_min is not None) and (self.md.cnt0 < cnt0_min):
+                continue
             cube.append(self.grab_latest())
             i += 1
         return cube
