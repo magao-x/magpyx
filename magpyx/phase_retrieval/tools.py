@@ -466,6 +466,22 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
         'zkvals' : div_axial,
     }
 
+def rsync_calibration_directory(remote, config_params, dry_run=False):
+    import os
+
+    validate_calibration_directory(config_params)
+
+    local_calibpath = config_params.get_param('calibration', 'path', str)
+    remote_calibpath = remote + ':' + local_calibpath
+    
+    logger.info(f'Syncing {remote_calibpath} to {local_calibpath}.')
+
+    cmdstr = 'rsync -azP ' + remote_calibpath + ' ' + local_calibpath
+    if dry_run:
+        cmdstr += ' --dry-run'
+
+    os.system(cmdstr)
+
 def validate_calibration_directory(config_params):
     '''
     Check that directory structure exists and is populated

@@ -60,7 +60,8 @@ setup(
                             'fdpr_measure_response=magpyx.phase_retrieval.console:console_measure_response_matrix',
                             'fdpr_compute_control_matrix=magpyx.phase_retrieval.console:console_compute_control_matrix',
                             'fdpr_close_loop=magpyx.phase_retrieval.console:console_close_loop',
-                            'fdpr_oneshot=magpyx.phase_retrieval.console:console_estimate_oneshot']
+                            'fdpr_oneshot=magpyx.phase_retrieval.console:console_estimate_oneshot',
+                            'fdpr_rsync_remote=magpyx.phase_retrieval.console:console_rsync_calibration_directory',]
     },
     
     # List run-time dependencies here.  These will be installed by pip when
