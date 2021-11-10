@@ -1045,12 +1045,12 @@ def console_update_flat():
             send_zeros_to_shmim(c)
             logger.info(f"Zeroed shmim {c}.")
 
-    # remove flat
-    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.OFF
-    sleep(1) # hopefully the new flat has shown up
-    client[f'{dmdevice}.flat.{flatbasename}'] = indi.SwitchState.ON
-    sleep(1) # load flat back
-    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.ON
+    sleep(1)
+    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.OFF # remove flat
+    sleep(5)
+    client[f'{dmdevice}.flat.{flatbasename}'] = indi.SwitchState.ON # hopefully the new flat has shown up
+    sleep(1)
+    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.ON # set flat
     sleep(5) # I don't know why I need this.
     logger.info(f"Reloaded flat on {dmdevice}.")
     client.stop()
