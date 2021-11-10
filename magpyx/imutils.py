@@ -47,7 +47,7 @@ def rescale_and_pad(image, scale_factor, pad_to):
                (int(np.ceil(rough_pads[1])), int(np.floor(rough_pads[1]))))
     return np.pad(rescaled, padding, 'constant', constant_values=0)
 
-def slice_to_valid_shape(image, cenyx, Ndesired):
+def slice_to_valid_shape(image, cenyx, Ndesired, return_slice=False):
     '''
     Slice to a shape about centered on cenyx, but allow
     cenyx to shift to respect the boundaries of the image.
@@ -62,6 +62,8 @@ def slice_to_valid_shape(image, cenyx, Ndesired):
 
     sliceyx = (slice(int(ceny_valid - Ndesired/2.), int(ceny_valid + Ndesired/2.)),
               slice(int(cenx_valid - Ndesired/2.), int(cenx_valid + Ndesired/2.)))
+    if return_slice:
+        return sliceyx
     
     return image[sliceyx]
 
