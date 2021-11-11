@@ -21,7 +21,7 @@ logger = logging.getLogger('fdpr')
 
 from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
                     validate_calibration_directory, Configuration, replace_symlink, estimate_response_matrix,
-                    get_magaox_fitting_params, rsync_calibration_directory)
+                    get_magaox_fitting_params, rsync_calibration_directory, update_symlinks_to_latest)
 
 def console_close_loop():
     #argparse
@@ -192,7 +192,16 @@ def console_rsync_calibration_directory():
     args = parser.parse_args()
     config_params = Configuration(args.config)
 
-    rsync_calibration_directory(args.remote, config_params, dry_run=args.dry_run)
+    # prefer NIC connection
+    if args.remote.upper() == 'ICC':
+        remote = '192.168.2.3' # RTC to ICC
+    elif args.remote.upper() == 'RTC':
+        remote = '192.168.2.2'
+    else:
+        remote = args.remote
+
+    rsync_calibration_directory(remote, config_params, dry_run=args.dry_run)
+    #update_symlinks_to_latest(config_params)
 
 def parse_override_args(override_args):
     '''

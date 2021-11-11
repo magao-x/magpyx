@@ -4,6 +4,7 @@ Tools to run FDPR, calibrate, and close the loop on MagAO-X
 import configparser
 from os import path, symlink, remove, mkdir
 from datetime import datetime
+from glob import glob
 
 
 from astropy.io import fits
@@ -25,6 +26,9 @@ from .measurement import take_measurements_from_config
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
+
+SUBDIRS = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
+           'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
 
 def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None):
     '''
@@ -314,6 +318,7 @@ def replace_symlink(symfile, newfile):
     if path.exists(symfile):
         remove(symfile)
     symlink(newfile, symfile)
+    logger.info(f'symlinked {newfile} to {symfile}')
 
 class Configuration(configparser.ConfigParser):
 
@@ -472,7 +477,7 @@ def rsync_calibration_directory(remote, config_params, dry_run=False):
     validate_calibration_directory(config_params)
 
     local_calibpath = config_params.get_param('calibration', 'path', str)
-    remote_calibpath = remote + ':' + local_calibpath
+    remote_calibpath = remote + ':' + local_calibpath + '/'
     
     logger.info(f'Syncing {remote_calibpath} to {local_calibpath}.')
 
@@ -481,6 +486,21 @@ def rsync_calibration_directory(remote, config_params, dry_run=False):
         cmdstr += ' --dry-run'
 
     os.system(cmdstr)
+
+def update_symlinks_to_latest(config_params):
+
+    validate_calibration_directory(config_params)
+    calibpath = config_params.get_param('calibration', 'path', str)
+
+    for curdir in SUBDIRS:
+        filelist = sorted(glob(path.join(calibpath, curdir, '*.fits')))
+        if len(filelist) > 0:
+            latest = filelist[-1]
+        else:
+            continue
+        sympath = path.join(calibpath, curdir+'.fits')
+        replace_symlink(sympath, latest)
+
 
 def validate_calibration_directory(config_params):
     '''
@@ -491,9 +511,6 @@ def validate_calibration_directory(config_params):
     calibpath = config_params.get_param('calibration', 'path', str)
     check_and_make(calibpath)
 
-    subdirs = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
-               'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
-
-    for curdir in subdirs:
+    for curdir in SUBDIRS:
         check_and_make(path.join(calibpath, curdir))
 
