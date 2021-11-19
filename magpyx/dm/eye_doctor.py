@@ -969,6 +969,8 @@ def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
         os.symlink(outname, sym_path)
         logger.info(f'Symlinked image at {outname} to {sym_path}.')
 
+    return outname
+
 def console_write_new_flat():
     import argparse
     parser = argparse.ArgumentParser()
@@ -1009,7 +1011,8 @@ def console_update_flat():
     port = args.portINDI
 
     # write out new flat and symlink
-    write_new_flat(dm, update_symlink=True)
+    flatname = write_new_flat(dm, update_symlink=True)
+    flatbasename = os.path.splitext(os.path.basename(flatname))[0]
 
     # zero modes
     client = indi.INDIClient('localhost', port)
@@ -1042,12 +1045,13 @@ def console_update_flat():
             send_zeros_to_shmim(c)
             logger.info(f"Zeroed shmim {c}.")
 
-    # toggle reload flat
-    #client.wait_for_properties([f'{dmdevice}.flat',f'{dmdevice}.flat_set'], timeout=10)
-    client[f'{dmdevice}.flat.default'] = indi.SwitchState.ON
     sleep(1)
-    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.ON
-    sleep(3) # I don't know why I need this.
+    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.OFF # remove flat
+    sleep(5)
+    client[f'{dmdevice}.flat.{flatbasename}'] = indi.SwitchState.ON # hopefully the new flat has shown up
+    sleep(1)
+    client[f'{dmdevice}.flat_set.toggle'] = indi.SwitchState.ON # set flat
+    sleep(5) # I don't know why I need this.
     logger.info(f"Reloaded flat on {dmdevice}.")
     client.stop()
 

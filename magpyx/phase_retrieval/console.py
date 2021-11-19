@@ -23,7 +23,7 @@ from importlib import import_module
 
 from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
                     validate_calibration_directory, Configuration, replace_symlink, estimate_response_matrix,
-                    get_magaox_fitting_params)
+                    get_magaox_fitting_params, rsync_calibration_directory, update_symlinks_to_latest)
 
 def console_close_loop():
     #argparse
@@ -201,6 +201,27 @@ def console_estimate_response_matrix():
     # replace symlink
     sympath_out = path.join(calib_path, 'estrespM.fits')
     replace_symlink(sympath_out, outname)
+
+def console_rsync_calibration_directory():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
+    parser.add_argument('remote', type=str, help='Name of remote system. Probably "icc" or "rtc".')
+    parser.add_argument('--dry-run', action='store_true', help='Dry run without syncing')
+
+    args = parser.parse_args()
+    config_params = Configuration(args.config)
+
+    # prefer NIC connection
+    if args.remote.upper() == 'ICC':
+        remote = '192.168.2.3' # RTC to ICC
+    elif args.remote.upper() == 'RTC':
+        remote = '192.168.2.2'
+    else:
+        remote = args.remote
+
+    rsync_calibration_directory(remote, config_params, dry_run=args.dry_run)
+    #update_symlinks_to_latest(config_params)
 
 def parse_override_args(override_args):
     '''

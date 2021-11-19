@@ -4,6 +4,7 @@ Tools to run FDPR, calibrate, and close the loop on MagAO-X
 import configparser
 from os import path, symlink, remove, mkdir
 from datetime import datetime
+from glob import glob
 
 
 from astropy.io import fits
@@ -26,128 +27,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mask', N=256, divtype='dm', divvals=[-0.3, -0.2, 0.2, 0.3], npad=5, nzernikes=45):
-    '''
-    Get the right set of parameters for each configuration.
-
-    Parameters:
-        divtype : str
-            Either "dm" or "stage"
-        divvals : list
-            If divtype is "dm", then a list of defocus values send to the DM (um RMS). Ex: [-0.3, -0.2, 0.2, 0.3]
-            If divtype is "stage", then a list of stage positions relative to nominal focus (mm). Ex: [-60, -40, 40, 60]
-    '''
-    
-    #---This can't be the best way to do this.---
-    
-    # focal lengths
-    fdict = {
-        'camsci1' : 621e-3,
-        'camsci2' : 621e-3,
-    }
-    # pupil sizes
-    maskdict = {
-        'bump_mask' : 8.604e-3,
-        'open' : 9e-3
-    }
-    # center waves
-    filterdict = {
-        'Halpha' : 656.4228678034681e-9
-    }
-    # pixel sizes
-    detdict = {
-        'camsci1' : 13e-6,
-        'camsci2' : 13e-6,
-    }
-    # pupil masks
-    pupilfuncdict =  {
-        'bump_mask' : pupils.get_coronagraphic_pupil,
-        'open' : pupils.get_open_pupil,
-    }
-    # pupil rotation
-    pupilrotdict = {
-        'camsci1' : 53.5,
-        'camsci2' : 53.5,
-    }
-    # pupil parity
-    pupilparitydict = {
-        'camsci1' : (slice(None,None,-1),slice(None,None,-1)),
-        'camsci2' : (slice(None,None,-1),slice(None,None,-1))
-    }
-    
-    #----------
-    
-    f = fdict.get(camera, None)
-    D = maskdict.get(mask, None)
-    wavelen = filterdict.get(wfilter, None)
-    delta_focal = detdict.get(camera, None)
-    pupilfunc = pupilfuncdict.get(mask, None)
-    pupilrot = pupilrotdict.get(camera, None)
-    pupilparity = pupilparitydict.get(camera, None)
-    
-    if f is None:
-        raise ValueError(f'Could not find a focal length for camera {camera}.')
-    if D is None:
-        raise ValueError(f'Could not find a pupil size for pupil mask {mask}.')
-    if wavelen is None:
-        raise ValueError(f'Could not find a center wave for filter {wfilter}.')
-    if delta_focal is None:
-        raise ValueError(f'Could not find a pixel scale for camera {camera}.')
-    if pupilfunc is None:
-        raise ValueError(f'Could not find an analytic pupil for mask {mask}.')
-    if pupilrot is None:
-        raise ValueError(f'Could not find a pupil rotation for camera {camera}.')
-    if pupilparity is None:
-        raise ValueError(f'Could not find pupil parity for camera {camera}.')
-      
-    # f/#
-    fnum = f/D
-    
-    # pupil and focal plane coordinates
-    delta_pupil = 1/(N*delta_focal)
-    delta_pupil_phys = delta_pupil*wavelen*f
-    
-    focal_coords = get_coords(N, delta_focal)
-    pupil_coords = get_coords(N, delta_pupil, center=True)
-    #pupil_coords_physical = get_coords(N, delta_pupil_phys)
-    
-    # analytic pupil mask
-    pupil_analytic_upsampled = pupilfunc(delta_pupil_phys/10, N*10, extra_rot=pupilrot)[pupilparity]
-    pupil_analytic = downscale_local_mean(pupil_analytic_upsampled, (10,10))
-    pupil_binary = pupilfunc(delta_pupil_phys, N, extra_rot=pupilrot)[pupilparity].astype(bool)
-
-    # fitting region
-    idx, idy = np.indices((N,N))
-    fitting_slice = (slice(idy[pupil_binary].min()-npad, idy[pupil_binary].max()+npad),
-                     slice(idx[pupil_binary].min()-npad, idx[pupil_binary].max()+npad))
-    fitting_region = np.zeros((N,N), dtype=bool)
-    fitting_region[fitting_slice] = True
-    
-    # zernike basis
-    zbasis = arbitrary_basis(fitting_region, nterms=nzernikes, outside=0)[3:] * gauss_convolve(pupil_analytic, 3)
-
-    # defocus diversity
-    if divtype.lower() == 'dm':
-        div_axial = defocus_rms_to_lateral_shift(-np.asarray(divvals)*1e-6, fnum)
-    elif divtype.lower() == 'stage':
-        div_axial = np.asarray(divvals)*1e-3
-    else:
-        raise ValueError("divtype must be either 'dm' or 'stage'.")
-    
-    return {
-        'f' : f,
-        'D' : D,
-        'fnum' : fnum,
-        'wavelen' : wavelen,
-        'focal_coords' : focal_coords,
-        'pupil_coords' : pupil_coords,
-        'pupil_analytic' : pupil_analytic,
-        'fitting_region' : fitting_region,
-        'fitting_slice' : fitting_slice,
-        'zbasis' : zbasis,
-        'zkvals' : div_axial,
-    }
-
+SUBDIRS = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
+           'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
 
 def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None):
     '''
@@ -444,6 +325,7 @@ def replace_symlink(symfile, newfile):
     if path.exists(symfile):
         remove(symfile)
     symlink(newfile, symfile)
+    logger.info(f'symlinked {newfile} to {symfile}')
 
 class Configuration(configparser.ConfigParser):
 
@@ -474,6 +356,159 @@ class Configuration(configparser.ConfigParser):
             except configparser.NoOptionError as e:
                 raise RuntimeError(f'Could not find option "{option}" in "{section}" section of config file. Double-check override option "{key}={value}."') from e
 
+def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mask', N=256, divtype='dm', divvals=[-0.3, -0.2, 0.2, 0.3], npad=5, nzernikes=45):
+    '''
+    Get the right set of parameters for each configuration.
+
+    Parameters:
+        divtype : str
+            Either "dm" or "stage"
+        divvals : list
+            If divtype is "dm", then a list of defocus values send to the DM (um RMS). Ex: [-0.3, -0.2, 0.2, 0.3]
+            If divtype is "stage", then a list of stage positions relative to nominal focus (mm). Ex: [-60, -40, 40, 60]
+    '''
+    
+    #---This can't be the best way to do this.---
+    
+    # focal lengths
+    fdict = {
+        'camsci1' : 621e-3,
+        'camsci2' : 621e-3,
+    }
+    # pupil sizes
+    maskdict = {
+        'bump_mask' : 8.604e-3,
+        'open' : 9e-3
+    }
+    # center waves
+    filterdict = {
+        'Halpha' : 656.4228678034681e-9
+    }
+    # pixel sizes
+    detdict = {
+        'camsci1' : 13e-6,
+        'camsci2' : 13e-6,
+    }
+    # pupil masks
+    pupilfuncdict =  {
+        'bump_mask' : pupils.get_coronagraphic_pupil,
+        'open' : pupils.get_open_pupil,
+    }
+    # pupil rotation
+    pupilrotdict = {
+        'camsci1' : 53.5,
+        'camsci2' : 53.5,
+    }
+    # pupil parity
+    pupilparitydict = {
+        'camsci1' : (slice(None,None,-1),slice(None,None,-1)),
+        'camsci2' : (slice(None,None,-1),slice(None,None,-1))
+    }
+    
+    #----------
+    
+    f = fdict.get(camera, None)
+    D = maskdict.get(mask, None)
+    wavelen = filterdict.get(wfilter, None)
+    delta_focal = detdict.get(camera, None)
+    pupilfunc = pupilfuncdict.get(mask, None)
+    pupilrot = pupilrotdict.get(camera, None)
+    pupilparity = pupilparitydict.get(camera, None)
+    
+    if f is None:
+        raise ValueError(f'Could not find a focal length for camera {camera}.')
+    if D is None:
+        raise ValueError(f'Could not find a pupil size for pupil mask {mask}.')
+    if wavelen is None:
+        raise ValueError(f'Could not find a center wave for filter {wfilter}.')
+    if delta_focal is None:
+        raise ValueError(f'Could not find a pixel scale for camera {camera}.')
+    if pupilfunc is None:
+        raise ValueError(f'Could not find an analytic pupil for mask {mask}.')
+    if pupilrot is None:
+        raise ValueError(f'Could not find a pupil rotation for camera {camera}.')
+    if pupilparity is None:
+        raise ValueError(f'Could not find pupil parity for camera {camera}.')
+      
+    # f/#
+    fnum = f/D
+    
+    # pupil and focal plane coordinates
+    delta_pupil = 1/(N*delta_focal)
+    delta_pupil_phys = delta_pupil*wavelen*f
+    
+    focal_coords = get_coords(N, delta_focal)
+    pupil_coords = get_coords(N, delta_pupil, center=True)
+    #pupil_coords_physical = get_coords(N, delta_pupil_phys)
+    
+    # analytic pupil mask
+    pupil_analytic_upsampled = pupilfunc(delta_pupil_phys/10, N*10, extra_rot=pupilrot)[pupilparity]
+    pupil_analytic = downscale_local_mean(pupil_analytic_upsampled, (10,10))
+    pupil_binary = pupilfunc(delta_pupil_phys, N, extra_rot=pupilrot)[pupilparity].astype(bool)
+
+    # fitting region
+    idx, idy = np.indices((N,N))
+    fitting_slice = (slice(idy[pupil_binary].min()-npad, idy[pupil_binary].max()+npad),
+                     slice(idx[pupil_binary].min()-npad, idx[pupil_binary].max()+npad))
+    fitting_region = np.zeros((N,N), dtype=bool)
+    fitting_region[fitting_slice] = True
+    
+    # zernike basis
+    zbasis = arbitrary_basis(fitting_region, nterms=nzernikes, outside=0)[3:] * gauss_convolve(pupil_analytic, 3)
+
+    # defocus diversity
+    if divtype.lower() == 'dm':
+        div_axial = defocus_rms_to_lateral_shift(-np.asarray(divvals)*1e-6, fnum)
+    elif divtype.lower() == 'stage':
+        div_axial = np.asarray(divvals)*1e-3
+    else:
+        raise ValueError("divtype must be either 'dm' or 'stage'.")
+    
+    return {
+        'f' : f,
+        'D' : D,
+        'fnum' : fnum,
+        'wavelen' : wavelen,
+        'focal_coords' : focal_coords,
+        'pupil_coords' : pupil_coords,
+        'pupil_analytic' : pupil_analytic,
+        'fitting_region' : fitting_region,
+        'fitting_slice' : fitting_slice,
+        'zbasis' : zbasis,
+        'zkvals' : div_axial,
+    }
+
+def rsync_calibration_directory(remote, config_params, dry_run=False):
+    import os
+
+    validate_calibration_directory(config_params)
+
+    local_calibpath = config_params.get_param('calibration', 'path', str)
+    remote_calibpath = remote + ':' + local_calibpath + '/'
+    
+    logger.info(f'Syncing {remote_calibpath} to {local_calibpath}.')
+
+    cmdstr = 'rsync -azP ' + remote_calibpath + ' ' + local_calibpath
+    if dry_run:
+        cmdstr += ' --dry-run'
+
+    os.system(cmdstr)
+
+def update_symlinks_to_latest(config_params):
+
+    validate_calibration_directory(config_params)
+    calibpath = config_params.get_param('calibration', 'path', str)
+
+    for curdir in SUBDIRS:
+        filelist = sorted(glob(path.join(calibpath, curdir, '*.fits')))
+        if len(filelist) > 0:
+            latest = filelist[-1]
+        else:
+            continue
+        sympath = path.join(calibpath, curdir+'.fits')
+        replace_symlink(sympath, latest)
+
+
 def validate_calibration_directory(config_params):
     '''
     Check that directory structure exists and is populated
@@ -483,9 +518,6 @@ def validate_calibration_directory(config_params):
     calibpath = config_params.get_param('calibration', 'path', str)
     check_and_make(calibpath)
 
-    subdirs = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
-               'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
-
-    for curdir in subdirs:
+    for curdir in SUBDIRS:
         check_and_make(path.join(calibpath, curdir))
 

@@ -73,19 +73,32 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                 dmdelay=dmdelay,
                                 final_position=positions[0]
                                 )
+    print(imcube.shape)
     # clip if needed
     shape = imcube.shape
+    naxes = len(shape)
     N = config_params.get_param('estimation', 'N', int)
-    if N < shape[1]: # assume the camera image is square
-        logger.info(f'Expected shape {N}x{N} but got shape {shape[1:]}. Clipping to {N}x{N} about center of mass.')
+    if N < shape[-1]: # assume the camera image is square
+        logger.info(f'Expected shape {N}x{N} but got shape {shape[-2:]}. Clipping to {N}x{N} about center of mass.')
         imcube_reduced = []
         for im in imcube:
-            com = center_of_mass(im)
-            newim = slice_to_valid_shape(im, com, N)
-            imcube_reduced.append(newim)
+            if naxes == 4:
+                # in this case, im is actually a cube
+                # so define a slice around the mean center of mass
+                # (e.g., response matrix measurements)
+                im0 = np.mean(im,axis=0)
+                com = center_of_mass(im0)
+                totalslice = (slice(None),) + slice_to_valid_shape(im0, com, N, return_slice=True)
+                imcube_reduced.append(im[totalslice])
+            elif naxes == 3:
+                # here, im is actually an image
+                # (e.g., measurements for a single estimate)
+                com = center_of_mass(im)
+                newim = slice_to_valid_shape(im, com, N)
+                imcube_reduced.append(newim)
         imcube = np.asarray(imcube_reduced)
-    if N > shape[1]: # assume the camera image is square
-        logger.warning(f'Camera frames are smaller than expected. Expected {N}x{N} but got {shape[1:]}.')
+    if N > shape[-1]: # assume the camera image is square
+        logger.warning(f'Camera frames are smaller than expected. Expected {N}x{N} but got {shape[-2:]}.')
 
     return imcube
 
