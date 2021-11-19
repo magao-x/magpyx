@@ -1,6 +1,9 @@
 import numpy as np
 from time import sleep
 
+from poppy.zernike import arbitrary_basis
+from astropy.io import fits
+
 from purepyindi import INDIClient
 
 from ..imutils import register_images, slice_to_valid_shape, center_of_mass
@@ -11,23 +14,29 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, camstream=None, darkim=None):
+def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, dmdivstream=None, camstream=None, darkim=None):
 
-    if client is None:
+    skip_indi = config_params.get_param('diversity', 'skip_indi', bool)
+
+    if (client is None) and (not skip_indi):
         # open indi client connection
         client = INDIClient('localhost', config_params.get_param('diversity', 'port', int))
         client.start()
 
     if dmstream is None:
         # open shmims
-        dmstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+        dmstream = ImageStream(config_params.get_param('diversity', 'dmchannel', str))
+    if dmdivstream is None:
+        dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
     if camstream is None:
         camname = config_params.get_param('camera', 'name', str)
         camstream = ImageStream(camname)
 
-    if darkim is None:
+    if darkim is None and (not skip_indi):
         # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
         darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
+    else:
+        darkim = None
 
     dmdelay = config_params.get_param('diversity', 'dmdelay', float)
     indidelay = config_params.get_param('diversity', 'indidelay', float)
@@ -35,10 +44,15 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
     # measure
     div_type = config_params.get_param('diversity', 'type', str)
     if div_type.lower() == 'dm':
-        imcube = measure_dm_diversity(client,
-                                      config_params.get_param('diversity', 'dmModes', str),
-                                      camstream,
+        # get defocus mode
+        with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
+            dm_mask = f[0].data
+        zbasis = arbitrary_basis(dm_mask, nterms=4, outside=0)
+        defocus_mode = zbasis[-1]
+        imcube = measure_dm_diversity(camstream,
                                       dmstream,
+                                      dmdivstream,
+                                      defocus_mode,
                                       config_params.get_param('diversity', 'values', float),
                                       config_params.get_param('diversity', 'navg', float),
                                       darkim=darkim,
@@ -75,11 +89,12 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
 
     return imcube
 
-def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nimages, dm_cmds=None, restore_dm=True, dmdelay=None, indidelay=None, improc='mean', darkim=None):
+def measure_dm_diversity(camstream, dmstream, dmdivstream, defocus_mode, defocus_vals, nimages, dm_cmds=None, restore_dm=True, dmdelay=None, indidelay=None, improc='mean', darkim=None):
 
     # get the initial defocus set on the DM
-    client.wait_for_properties([f'{device}.current_amps',])
-    defocus0 = client[f'{device}.current_amps.0002']
+    #client.wait_for_properties([f'{device}.current_amps',])
+    #defocus0 = client[f'{device}.current_amps.0002']
+    divcmd = dmdivstream.grab_latest()
     
     # commanding DM
     dm_shape = dmstream.grab_latest().shape
@@ -98,7 +113,8 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
         print(f'Moving to focus position {j+1}')
                                 
         # send INDI command to apply defocus to DM
-        client[f'{device}.current_amps.0002'] = defocus0 + curdefocus
+        #client[f'{device}.current_amps.0002'] = defocus0 + curdefocus
+        dmdivstream.write(defocus_mode*curdefocus + divcmd)
         if indidelay is not None:
             sleep(indidelay)
 
@@ -125,7 +141,8 @@ def measure_dm_diversity(client, device, camstream, dmstream, defocus_vals, nima
     # set defocus back to the starting point
     if restore_dm:
         dmstream.write(curcmd)
-    client[f'{device}.current_amps.0002'] = defocus0
+    #client[f'{device}.current_amps.0002'] = defocus0
+    dmdivstream.write(divcmd)
     if indidelay is not None:
         sleep(indidelay)
     return np.squeeze(allims)

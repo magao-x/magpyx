@@ -751,6 +751,14 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
 
     return out, curdict, total_phase, total_amp, Epupil, Efocal, sim_psf, Gkhat
 
+def get_weights(imcube, fudge_factor=100):
+    bg = np.median(imcube)
+    cfac = [np.min(imcube[0] - bg, axis=(-2,-1)) + fudge_factor for im in imcube]
+    weights = np.asarray([1./imutils.gauss_convolve(p - bg + c, 3) for p, c in zip(imcube, cfac)]).astype(np.float64)
+    weights -= np.nanmin(weights,axis=(-2,-1))[:,None,None]
+    weights /= np.nanmax(weights,axis=(-2,-1))[:,None,None]
+    return weights
+
 def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS):
     '''
     This is a wrapper around multi_step_fit, to handle a lot of the data wrangling.
@@ -760,7 +768,13 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
     # weights defaults to 1/Poisson
     if weights is None:
         bg = np.median(psfs)
-        weights = np.asarray([1./gauss_convolve(p + 5*bg, 5) for p in psfs]).astype(np.float64)
+        # This works for MagAO-X, oddly enough
+        #weights = np.asarray([1./gauss_convolve(p + 5*bg, 5) for p in psfs]).astype(np.float64)
+        # SCOOB weighting below
+        #weights = np.asarray([1./gauss_convolve(p - 0.99*bg + 1e-2, 3) for p in psfs]).astype(np.float64)
+        #weights -= np.nanmin(weights,axis=(-2,-1))[:,None,None]
+        #weights /= np.nanmax(weights,axis=(-2,-1))[:,None,None]
+        weights = get_weights(psfs)
 
     # fft shifts
     fitting_region_shifted = np.fft.fftshift(params['fitting_region'])

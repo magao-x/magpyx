@@ -19,6 +19,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
+from importlib import import_module
+
 from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
                     validate_calibration_directory, Configuration, replace_symlink, estimate_response_matrix,
                     get_magaox_fitting_params)
@@ -66,7 +68,13 @@ def console_compute_control_matrix():
 
     validate_calibration_directory(config_params)
 
-    compute_control_matrix(config_params, write=True)
+    # get param_func
+    calib_func = config_params.get_param('calibration', 'function', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    param_func = getattr(mod, fname)
+
+    compute_control_matrix(config_params, write=True, param_func=param_func)
 
 def console_measure_response_matrix():
     # argparse
@@ -119,8 +127,14 @@ def console_estimate_oneshot():
 
     validate_calibration_directory(config_params)
 
+    # get the param_func
+    calib_func = config_params.get_param('calibration', 'function', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    param_func = getattr(mod, fname)
+
     # do the thing
-    estimate_oneshot(config_params, update_shmim=args.shmims, write_out=args.write)
+    estimate_oneshot(config_params, update_shmim=args.shmims, write_out=args.write, param_func=param_func)
 
 def console_estimate_response_matrix():
 
@@ -129,6 +143,7 @@ def console_estimate_response_matrix():
     parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
     parser.add_argument('--fits_file', type=str, default=None , help='Explicitly specify the fits file to process. If not given, defaults to latest interaction matrix in the calib directory.')
     parser.add_argument('--nproc', type=int, default=2, help='Number of processes to spawn. [Default: 2]')
+    #parser.add_argument('--paramfunc','-p', type=str, default=None, help='Function from which to define fitting parameters. Specified as module.function Default: get_magaox_fitting_params')
     parser.add_argument('--override','-o', type=str, default=None, nargs='+', help='Space-delimited list of config parameters to override, set as section.option=value')
     args = parser.parse_args()
 
@@ -156,7 +171,12 @@ def console_estimate_response_matrix():
     logger.info(f'Performing estimation for {image_cube.shape} FITS file.')
 
     # get fitting params
-    fitting_params = get_magaox_fitting_params(camera=config_params.get_param('camera', 'name', str),
+    calib_func = config_params.get_param('calibration', 'function', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    param_func = getattr(mod, fname)
+
+    fitting_params = param_func(camera=config_params.get_param('camera', 'name', str),
                                                wfilter=config_params.get_param('diversity', 'wfilter', str),
                                                mask=config_params.get_param('estimation', 'pupil', str),
                                                N=config_params.get_param('estimation', 'N', int),
