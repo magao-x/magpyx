@@ -67,14 +67,15 @@ def get_coronagraphic_pupil(delta_phys, N, extra_rot=0):
     
     return pupil_analytic
 
-def get_open_pupil(delta_phys, N):
+def get_open_pupil(delta_phys, N, extra_rot=0):
+    # rotation argument is meaningless here, but included for consistency with the other pupil functions
     
     pupil_analytic = np.zeros((N,N))
     cen = (N-1)/2.
     
     # inner and outer diameters
     D = 9e-3
-    D_sm = 0.239 * D
+    D_sm = 0.3 * D #0.239 * D
     
     Didx = draw.circle(cen, cen, D/delta_phys/2, shape=(N,N))
     Dsm_idx = draw.circle(cen, cen, D_sm/delta_phys/2, shape=(N,N))
