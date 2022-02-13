@@ -81,7 +81,7 @@ def get_hadamard_modes(Nact):
     np2 = 2**int(np.ceil(np.log2(Nact)))
     #print(f'Generating a {np2}x{np2} Hadamard matrix.')
     hmat = hadamard(np2)
-    return hmat[:Nact,:Nact]
+    return hmat#[:Nact,:Nact]
 
 '''def get_hadamard_modes(dm_mask, roll=0, shuffle=None):
     nact = np.count_nonzero(dm_mask)
