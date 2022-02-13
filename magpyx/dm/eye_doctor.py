@@ -910,7 +910,7 @@ def console_comprehensive():
     shmim.close()
     client.stop()
 
-def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
+def write_new_flat(dm, description=None, filename=None, update_symlink=False, overwrite=False):
     '''
     Write out a new flat to FITS after eye doctoring.
 
@@ -950,9 +950,15 @@ def write_new_flat(dm, filename=None, update_symlink=False, overwrite=False):
         dm_name = dm
         outpath = '.'
 
+    if description is None:
+        pre = 'flat'
+    else:
+        pre = f'flat_{description}'
+    
+
     if filename is None:
         date = datetime.now().strftime("%Y%m%d-%H%M%S")
-        outname = os.path.join(outpath, 'flats', f'flat_optimized_{dm_name}_{date}.fits')
+        outname = os.path.join(outpath, 'flats', f'{pre}_{dm_name}_{date}.fits')
     else:
         outname = filename
 
@@ -976,13 +982,15 @@ def console_write_new_flat():
     parser = argparse.ArgumentParser()
     parser.add_argument('dm', type=str, help='DM. One of ["woofer", "ncpc", "tweeter"]')
     parser.add_argument('--filename', default=None, type=str,
-                        help='Path of file to write out. Default: /opt/MagAOX/calib/dm/<dm_name>/flats/flat_optimized_<dm name>_<date/time>.fits')
+                        help='Path of file to write out. Default: /opt/MagAOX/calib/dm/<dm_name>/flats/flat_<dm name>_<date/time>.fits')
+    parser.add_argument('-d', '--descriptor', default=None, type=str,
+                        help='Add a descriptor to this flat. If filename is not specified (which will overwrite this), gets written as /opt/MagAOX/calib/dm/<dm_name>/flats/flat_<descriptor>_<dm name>_<date/time>.fits')
     parser.add_argument('--symlink', action='store_true',
-                        help='Symlink flat to /opt/MagAOX/calib/dm/<dm_name>/flats/flat.fits or at the custom path provided with the "--filename" flag.')
+                        help='Symlink flat to /opt/MagAOX/calib/dm/<dm_name>/flats/flat.fits or at the custom path provided with the "--filename" flag. [Default: False]')
     parser.add_argument('--overwrite', action='store_true',
                         help='Overwrite an existing file? [Default: False]')
     args = parser.parse_args()
-    write_new_flat(args.dm, filename=args.filename, update_symlink=args.symlink, overwrite=args.overwrite)
+    write_new_flat(args.dm, description=args.descriptor, filename=args.filename, update_symlink=args.symlink, overwrite=args.overwrite)
 
 def console_zero_all_modes():
     import argparse

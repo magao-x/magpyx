@@ -30,14 +30,14 @@ logger = logging.getLogger('fdpr')
 SUBDIRS = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
            'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
 
-def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None):
+def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None, restore_dm=True):
     '''
     wfsfunc for closed loop control: measure and return pupil-plane phase vector
     '''
     # take the measurement and run the estimator
     estdict, fitting_params = estimate_oneshot(config_params, update_shmim=True, write_out=False,
                                client=client, dmstream=dmstream, camstream=camstream,
-                               darkim=darkim)
+                               darkim=darkim, restore_dm=restore_dm)
 
     # remove ptt and return (I guess)
     # ugh, the wfsmask is defined within the fit region
@@ -95,7 +95,8 @@ def close_loop(config_params):
         'dmstream' : dmstream,
         'camstream' : camstream,
         'darkim' : darkim,
-        'wfsmask' : wfsmask
+        'wfsmask' : wfsmask,
+        #'restore_dm' : False
     }
     wfsfunc = measure_and_estimate_phase_vector
     
@@ -196,18 +197,20 @@ def measure_response_matrix(config_params):
     # +/- and scaling
     dm_cmds = np.concatenate([hmodes_sq, -hmodes_sq]) * hval
 
+    logger.info(f'Got a {hmodes.shape} Hadmard matrix and constructed a {dm_cmds.shape} DM command sequence.')
     logger.info(f'Taking measurements for interaction matrix...')
     imcube = take_measurements_from_config(config_params, dm_cmds=dm_cmds)
 
     return imcube.swapaxes(0,1)
 
-def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None):
+def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None, restore_dm=True):
 
     imcube = take_measurements_from_config(config_params,
                                            client=client,
                                            dmstream=dmstream,
                                            camstream=camstream,
-                                           darkim=darkim)
+                                           darkim=darkim,
+                                           restore_dm=restore_dm)
 
     # estimate    
     # get fitting params

@@ -64,13 +64,18 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5,
 
     return allcmds, allresid
 
-def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None):
+def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, deltas=False):
     '''
     Given a measurement cube of WFS measurements of +/- hadamard modes with amplitude hval,
     return the reconstructed IF matrix, DMmodes, WFSmodes, DM and WFS maps/masks, and the control/reconstructor matrix
     '''
+
+    # get nact
+    nact = np.count_nonzero(dm_map)
+
     # construct IF cube
-    ifcube = get_ifcube_from_hmeas(hmeas, hmodes, hval)
+    #print(hmeas.shape, hmodes.shape)
+    ifcube = get_ifcube_from_hmeas(hmeas, hmodes, hval, nact=nact, deltas=deltas)
 
     # get DM and WFS maps and masks
     wfs_ctrl_map, wfs_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, threshold=wfsthresh)
@@ -81,6 +86,9 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
 
     # get SVD
     wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
+
+    #print(ifcube_active.shape, wfsmodes.shape, singvals.shape, dmmodes.shape)
+    #return wfs_ctrl_map, wfs_ctrl_mask, dm_ctrl_map, dm_ctrl_mask, ifcube, wfsmodes, singvals, dmmodes
 
     # interpolate DM modes
     dmmodes_interp = interpolate_dm_modes(dmmodes, dm_ctrl_mask, dm_map, dm_mask, n=ninterp)
@@ -129,7 +137,7 @@ def get_svd_from_ifcube(ifcube):
     wfsmodes, s, dmmodes = svd(ifcube.reshape((nact,-1)).swapaxes(0,1))
     return wfsmodes, s, dmmodes
 
-def get_ifcube_from_hmeas(hmeas, hmodes, hval):
+def get_ifcube_from_hmeas(hmeas, hmodes, hval, nact=None, deltas=False):
     '''
     Reconstruct the influence function cube from the measured WFS
     response to +/- hadamard modes
@@ -139,13 +147,21 @@ def get_ifcube_from_hmeas(hmeas, hmodes, hval):
     if shape[0] != shape[1]:
         raise ValueError(f'hmodes must be a square matrix, but got shape {shape}!')
 
+    if nact is None:
+        nact = shape[0]
+
     # take the difference of the +/- measurements and normalize by the commanded amplitude hval
-    hcube_norm = (hmeas[:shape[0]] - hmeas[shape[0]:]) / 2. / hval
+    if not deltas:
+        hcube_norm = (hmeas[:shape[0]] - hmeas[shape[0]:]) / 2. / hval
+    else:
+        hcube_norm = hmeas / 2. / hval
+
+    hcube_norm -= np.mean(hcube_norm, axis=0)
 
     # inverse should just be H^T / n or something, so this is very lazy
-    hinv = np.linalg.inv(hmodes)
+    hinv = np.linalg.pinv(hmodes[:,:nact])
 
-    return np.dot(hinv, hcube_norm.reshape((shape[0],-1))).reshape((shape[0],*shape_wfs))
+    return np.dot(hinv, hcube_norm.reshape((shape[0],-1))).reshape((nact,*shape_wfs))
 
 def get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=0.5):
     '''
@@ -220,7 +236,9 @@ def get_coupling_matrix(active_mask, dm_map, dm_mask, n=1):
     '''
 
     # define inactive map
-    inactive_mask = ~active_mask.astype(bool) & dm_mask
+    dm_mask = dm_mask.astype(bool)
+    active_mask = active_mask.astype(bool)
+    inactive_mask = ~active_mask & dm_mask
     nact = int(np.sum(dm_map != 0))
 
     # get indices for distance calc later
@@ -230,8 +248,11 @@ def get_coupling_matrix(active_mask, dm_map, dm_mask, n=1):
     # matrix
     couple_matrix = np.zeros((nact, nact)) 
 
+    if np.count_nonzero(inactive_mask) == 0:
+        return couple_matrix.T
+
     # for each inactive actuator, figure out the n closest active actuators
-    for y, x in np.squeeze(np.dstack(np.where(inactive_mask))):
+    for y, x in np.squeeze(np.dstack(np.where(inactive_mask)), axis=0):
         idy = indices[0] - y
         idx = indices[1] - x
         d = np.sqrt(idy**2 + idx**2)
