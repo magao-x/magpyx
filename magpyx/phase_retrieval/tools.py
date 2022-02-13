@@ -315,7 +315,7 @@ def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_
     return {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
 def replace_symlink(symfile, newfile):
-    if path.exists(symfile):
+    if path.islink(symfile) or path.exists(symfile):
         remove(symfile)
     symlink(newfile, symfile)
     logger.info(f'symlinked {newfile} to {symfile}')
