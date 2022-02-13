@@ -14,6 +14,7 @@ from datetime import datetime
 
 from astropy.io import fits
 import numpy as np
+from skimage.filters.thresholding import threshold_otsu
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -170,7 +171,17 @@ def console_estimate_response_matrix():
                                        processes=config_params.get_param('estimation', 'nproc', int),
                                        gpus=config_params.get_param('estimation', 'gpus', int),
                                        fix_xy_to_first=config_params.get_param('interaction', 'fix_xy_to_first', bool))
-    estrespM = np.asarray(estdict['phase']) * fitting_params['pupil_analytic']
+    pupil = fitting_params['pupil_analytic'].astype(bool)
+    estrespM = np.asarray(estdict['phase']) * pupil
+
+    # amplitude thresholding
+    amp = np.mean(estdict['amp'], axis=0)
+    amp_norm = amp / np.mean(amp[pupil])
+    thresh_amp = threshold_otsu(amp_norm)
+    threshold = config_params.get_param('control', 'ampthreshold', float)
+    amp_mask = amp_norm > (thresh_amp*threshold)
+
+    estrespM *= amp_mask
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
     outname = path.join(calib_path, 'estrespM', f'estrespM_{date}.fits')
