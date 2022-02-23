@@ -154,6 +154,8 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
     if nmodes is None:
         nmodes = config_params.get_param('control', 'nmodes', int)
 
+    remove_modes = config_params.get_param('control', 'remove_modes', int)
+
     ctrldict = control.get_control_matrix_from_hadamard_measurements(hmeas,
                                                                      hmodes,
                                                                      hval,
@@ -162,7 +164,8 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
                                                                      wfsthresh=wfsthresh,
                                                                      dmthresh=dmthresh,
                                                                      ninterp=ninterp,
-                                                                     nmodes=nmodes)
+                                                                     nmodes=nmodes,
+                                                                     remove_modes=remove_modes)
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -314,6 +317,8 @@ def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_
         xk = yk = None
     # do all the processing
     rlist = multiprocess_phase_retrieval(image_cube, params, processes=processes, gpus=gpus, steps=steps, xk_in=xk, yk_in=yk)
+
+    #return rlist
     # turn list of dictionaries into dictionary of lists
     return {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
