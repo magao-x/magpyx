@@ -12,6 +12,8 @@ import numpy as np
 from scipy.linalg import svd
 from skimage.filters import threshold_otsu
 
+from poppy.zernike import arbitrary_basis
+
 from . import dmutils
 
 import logging
@@ -64,7 +66,16 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5,
 
     return allcmds, allresid
 
-def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, deltas=False):
+def remove_modes_from_if(ifcube, modes, wfsmask):
+
+    def remove_zernikes(im, modes, mask):
+        #modes_flat = modes[:,mask.astype(bool)]
+        coeffs = np.sum(im * modes, axis=(-2,-1)) / mask.sum()
+        return im - np.sum(modes*coeffs[:,None,None],axis=0)
+
+    return np.asarray([remove_zernikes(im, modes, wfsmask) for im in ifcube])
+
+def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, deltas=False, remove_modes=None):
     '''
     Given a measurement cube of WFS measurements of +/- hadamard modes with amplitude hval,
     return the reconstructed IF matrix, DMmodes, WFSmodes, DM and WFS maps/masks, and the control/reconstructor matrix
@@ -77,13 +88,19 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     #print(hmeas.shape, hmodes.shape)
     ifcube = get_ifcube_from_hmeas(hmeas, hmodes, hval, nact=nact, deltas=deltas)
 
+    # remove modes if requested
+    if remove_modes is not None:
+        mask = np.mean(ifcube,axis=0) != 0
+        modes = arbitrary_basis(mask, nterms=remove_modes, outside=0)
+        ifcube = remove_modes_from_if(ifcube, modes, mask)
+
     # get DM and WFS maps and masks
     wfs_ctrl_map, wfs_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, threshold=wfsthresh)
     dm_ctrl_map, dm_ctrl_mask = get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=dmthresh)
 
     # reduce ifcube to only include pixels in wfs_ctrl_mask
     ifcube_active = ifcube[:,wfs_ctrl_mask]
-
+    ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean 
     # get SVD
     wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
 
@@ -186,7 +203,7 @@ def get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=0.5):
     '''
     rms_dm = np.sqrt(np.mean(ifcube**2,axis=(-2,-1)))
     dm_ctrl_map = dmutils.map_vector_to_square(rms_dm, dm_map, dm_mask)
-    thresh_dm = threshold_otsu(dm_ctrl_map)
+    thresh_dm = threshold_otsu(dm_ctrl_map[dm_mask.astype(bool)])
     dm_ctrl_mask = dm_ctrl_map > (thresh_dm*threshold)
 
     return dm_ctrl_map, dm_ctrl_mask
