@@ -102,7 +102,7 @@ class ImageStream(shmio.Image):
         if expected_shape is not None:
             self.check_shape(expected_shape)
 
-        self.buffer = np.array(self, copy=False).T
+        self.buffer = np.array(self, copy=False, order='F')#.T
         self.dtype = self.buffer.dtype
         self.naxis = self.md.naxis
         self.semindex = None
@@ -119,7 +119,7 @@ class ImageStream(shmio.Image):
         return np.array(self.buffer[start:stop:step], copy=True)
 
     def write(self, arr):
-        return self._write(np.ascontiguousarray(arr, dtype=self.dtype))
+        return self._write(np.asfortranarray(arr, dtype=self.dtype))
 
     def open(self):
         ret = super().open(self.name)
@@ -209,7 +209,7 @@ def send_shmim_to_fits(shmim_name, fitsfile, nimages=1):
 
 def send_zeros_to_shmim(shmim_name):
     with ImageStream(shmim_name) as shmim:
-        zeros = np.zeros_like(shmim.buffer).T
+        zeros = np.zeros_like(shmim.buffer)#.T
         shmim.write(zeros)
 
 def console_send_dm_poke():
