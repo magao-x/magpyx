@@ -594,12 +594,12 @@ def Gammaprime(x, kappa):
 
 DEFAULT_OPTIONS = {'gtol' : 1e-6, 'ftol' : 1e-6, 'maxcor' : 1000, 'maxls' : 100}
 
-rough_smooth = 3
-fine_smooth = 1
+rough_smooth = 4#3
+fine_smooth = 2#1
 very_fine = None
 
 lambda1 = 0.5
-lambda2 = 0.125
+lambda2 = 0.25 #0.125
 kappa1 = 1
 kappa2 = 1
 
@@ -623,9 +623,9 @@ DEFAULT_STEPS = [
     # phase: pixel
     {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : very_fine, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # amplitude: pixel
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : very_fine, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial + phase (pixel) + amplitude (pixel)
-    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : very_fine, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
 ]
 
 # copy DEFAULT_STEPS but disable (x,y) fitting
@@ -848,6 +848,7 @@ def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, 
     mpqueue = GPUQueue(gpu_list, mpfunc)
     for (i, psfcube) in enumerate(allpsfs):
         #print(psfcube.shape)
+        #print(i)
         mpqueue.add([i, psfcube])
 
     # check for completion every second
@@ -858,6 +859,7 @@ def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, 
     allresults = mpqueue.get_sorted_results()
     mpqueue.terminate()
 
+    #return allresults
     return allresults
 
 class GPUWorker(mp.Process):
@@ -908,7 +910,7 @@ class GPUQueue(object):
     
     def get_sorted_results(self):
         results = self.raw_results
-        sort_idx = np.asarray([r[0] for r in results])
+        sort_idx = np.argsort(np.asarray([r[0] for r in results]))
         return np.asarray([r[1] for r in results])[sort_idx]
             
     def terminate(self, timeout=5):
