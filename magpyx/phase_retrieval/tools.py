@@ -241,17 +241,17 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
     amp_mask = amp_norm > (thresh_amp*threshold)
 
     estdict['phase'][0] *= amp_mask
-    phase = estdict['phase'][0] * pupil
+    phase = remove_plane(estdict['phase'][0], pupil) * pupil
 
     phase_rms = np.std(phase[pupil])#rms(phase, pupil)
     amp_rms = np.std(amp_norm[pupil])#rms(amp_norm, pupil)
     amp_lnrms = np.std(np.log(amp_norm)[pupil])#rms(np.log(amp_norm), pupil)
-    strehl = get_strehl(phase, amp_norm, pupil)
+    strehl, strehl_phase, strehl_amp = get_strehl(phase, amp_norm, pupil)
     #strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
 
     logger.info(f'Estimated phase RMS: {phase_rms:.3} (rad)')
     logger.info(f'Estimated amplitude RMS: {amp_rms*100:.3} (%)')
-    logger.info(f'Estimated Strehl: {strehl}')
+    logger.info(f'Estimated Strehl: {strehl:.2f} ({strehl_phase:.2f} phase-only and {strehl_amp:.2f} amplitude-only)')
 
     if update_shmim:
         update_estimate_shmims(phase, amp, config_params)
@@ -268,8 +268,10 @@ def get_strehl(phase, amplitude, mask):
     log_amp = np.log(amp)
     varlogamp = np.var(log_amp[mask])
 
-    varphase = np.var(phase[mask])    
-    return np.exp(-varphase) * np.exp(-varlogamp)
+    varphase = np.var(phase[mask])  
+    strehl_phase = np.exp(-varphase)
+    strehl_amp = np.exp(-varlogamp)  
+    return strehl_phase * strehl_amp, strehl_phase, strehl_amp
 
 
 def update_estimate_shmims(phase, amp, config_params):

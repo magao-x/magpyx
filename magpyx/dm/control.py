@@ -100,7 +100,8 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
 
     # reduce ifcube to only include pixels in wfs_ctrl_mask
     ifcube_active = ifcube[:,wfs_ctrl_mask]
-    ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean 
+    ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean
+
     # get SVD
     wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
 
