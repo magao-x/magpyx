@@ -751,10 +751,10 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
 
     return out, curdict, total_phase, total_amp, Epupil, Efocal, sim_psf, Gkhat
 
-def get_weights(imcube, fudge_factor=100):
+def get_weights(imcube, fudge_factor=20):
     bg = np.median(imcube)
     cfac = [np.min(imcube[0] - bg, axis=(-2,-1)) + fudge_factor for im in imcube]
-    weights = np.asarray([1./imutils.gauss_convolve(p - bg + c, 3) for p, c in zip(imcube, cfac)]).astype(np.float64)
+    weights = np.asarray([1./gauss_convolve(p - bg + c, 3) for p, c in zip(imcube, cfac)]).astype(np.float64)
     weights -= np.nanmin(weights,axis=(-2,-1))[:,None,None]
     weights /= np.nanmax(weights,axis=(-2,-1))[:,None,None]
     return weights
@@ -769,12 +769,13 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
     if weights is None:
         bg = np.median(psfs)
         # This works for MagAO-X, oddly enough
-        #weights = np.asarray([1./gauss_convolve(p + 5*bg, 5) for p in psfs]).astype(np.float64)
+        weights = np.asarray([1./gauss_convolve(p + 5*bg, 5) for p in psfs]).astype(np.float64)
+
         # SCOOB weighting below
         #weights = np.asarray([1./gauss_convolve(p - 0.99*bg + 1e-2, 3) for p in psfs]).astype(np.float64)
         #weights -= np.nanmin(weights,axis=(-2,-1))[:,None,None]
         #weights /= np.nanmax(weights,axis=(-2,-1))[:,None,None]
-        weights = get_weights(psfs)
+        #weights = get_weights(psfs)
 
     # fft shifts
     fitting_region_shifted = np.fft.fftshift(params['fitting_region'])
@@ -782,6 +783,9 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
     pcoords_shifted = np.fft.fftshift(params['pupil_coords'], axes=(-2,-1))
     fcoords_shifted = np.fft.fftshift(params['focal_coords'], axes=(-2,-1))
     zbasis_shifted = np.fft.fftshift(params['zbasis'], axes=(-2,-1))
+
+    # smooth and shift for input pupil guess
+    input_amp = np.fft.fftshift(gauss_convolve(params['pupil_analytic'] + 1e-3 * params['fitting_region'],2))
 
     psfs_shifted = np.fft.fftshift(psfs.astype(np.float64), axes=(-2,-1))
     weights_shifted = np.fft.fftshift(weights, axes=(-2,-1))
@@ -803,7 +807,7 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
     
     out_final, param_dict, est_phase, est_amp, est_Epupil, est_Efocal, est_psf, Gkhat = multi_step_fit(psfs_shifted, fitting_region_shifted, z0vals, zbasis_shifted,
         params['wavelen'], params['f'], weights_shifted, pcoords_shifted, fcoords_shifted, steps=steps, options=options, input_phase=input_phase,
-        input_amp=pupil_analytic_shifted + fitting_region_shifted*1e-5, xk=xk_in, yk=yk_in, jac=True, focal_plane_blur=focal_plane_blur, method=method, gpu=gpu)
+        input_amp=input_amp, xk=xk_in, yk=yk_in, jac=True, focal_plane_blur=focal_plane_blur, method=method, gpu=gpu)
     
     # ifftshift and return
     return {
