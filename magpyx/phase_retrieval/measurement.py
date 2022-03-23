@@ -14,8 +14,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, dmdivstream=None, camstream=None, darkim=None):
-
+def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, dmdivstream=None, camstream=None, darkim=None,  restore_dm=True):
+    
     skip_indi = config_params.get_param('diversity', 'skip_indi', bool)
 
     if (client is None) and (not skip_indi):
@@ -58,7 +58,8 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                       darkim=darkim,
                                       dm_cmds=dm_cmds,
                                       dmdelay=dmdelay,
-                                      indidelay=indidelay
+                                      indidelay=indidelay,
+                                      restore_dm=restore_dm
                                       )
     else: # stage diversity
         positions = np.asarray(config_params.get_param('diversity', 'values', float)) + config_params.get_param('diversity', 'stage_focus', float)
@@ -71,7 +72,8 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                 darkim=darkim,
                                 dm_cmds=dm_cmds,
                                 dmdelay=dmdelay,
-                                final_position=positions[0]
+                                final_position=positions[0],
+                                restore_dm=restore_dm
                                 )
     print(imcube.shape)
     # clip if needed
@@ -168,7 +170,7 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
     if restore_dm:
         curcmd = dmstream.grab_latest()
     else:
-        curmd = np.zeros(dm_shape)
+        curcmd = np.zeros(dm_shape)
 
     if darkim is None:
         darkim = 0
@@ -179,6 +181,7 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
                                 
         # block until stage is in position
         move_stage(client, camstage, pos, block=True)
+        sleep(0.1)
 
         # loop over DM commands, and take measurements
         curims = []
@@ -186,6 +189,7 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
             dm_cmds = [np.zeros(dm_shape, dtype=dm_type) + curcmd,]
         for cmd in dm_cmds:
             dmstream.write(cmd.astype(dm_type))
+            dmstream.write(cmd.astype(dm_type)) # for good measure
             cnt0 = camstream.md.cnt0 # grab the current camera frame number
             if dmdelay is not None:
                 #sleep(dmdelay)
@@ -198,7 +202,10 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
             else:
                 im = np.mean(imlist, axis=0) - darkim
             curims.append(im)
-        allims.append(curims)      
+        allims.append(curims)  
+        
+        if restore_dm:
+            dmstream.write(curcmd.astype(dm_type)) # reset between stage moves (minimize creep on ALPAOs)  
         
     # restore
     if restore_dm:

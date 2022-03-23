@@ -155,7 +155,7 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
     }
 
 
-def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None, param_func=get_magaox_fitting_params):
+def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None, param_func=get_magaox_fitting_params, restore_dm=True):
     '''
     wfsfunc for closed loop control: measure and return pupil-plane phase vector
     '''
@@ -175,7 +175,8 @@ def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=
     # take the measurement and run the estimator
     estdict, fitting_params, imcube = estimate_oneshot(config_params, update_shmim=True, write_out=False,
                                client=client, dmstream=dmstream, camstream=camstream,
-                               darkim=darkim, param_func=param_func, shmim_mask=shmim_mask)
+                               darkim=darkim, param_func=param_func, shmim_mask=shmim_mask,
+                               restore_dm=restore_dm)
 
     # remove ptt and return (I guess)
     # ugh, the wfsmask is defined within the fit region
@@ -251,6 +252,7 @@ def close_loop(config_params):
         'darkim' : darkim,
         'wfsmask' : wfsmask,
         'param_func' : param_func
+        #'restore_dm' : False
     }
     wfsfunc = measure_and_estimate_phase_vector
     
@@ -310,6 +312,8 @@ def compute_control_matrix(config_params, nmodes=None, write=True, param_func=ge
     if nmodes is None:
         nmodes = config_params.get_param('control', 'nmodes', int)
 
+    remove_modes = config_params.get_param('control', 'remove_modes', int)
+
     ctrldict = control.get_control_matrix_from_hadamard_measurements(hmeas,
                                                                      hmodes,
                                                                      hval,
@@ -318,7 +322,8 @@ def compute_control_matrix(config_params, nmodes=None, write=True, param_func=ge
                                                                      wfsthresh=wfsthresh,
                                                                      dmthresh=dmthresh,
                                                                      ninterp=ninterp,
-                                                                     nmodes=nmodes)
+                                                                     nmodes=nmodes,
+                                                                     remove_modes=remove_modes)
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -359,13 +364,14 @@ def measure_response_matrix(config_params):
 
     return imcube.swapaxes(0,1)
 
-def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None, param_func=get_magaox_fitting_params, shmim_mask=None):
+def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None, param_func=get_magaox_fitting_params, shmim_mask=None, restore_dm=True):
 
     imcube = take_measurements_from_config(config_params,
                                            client=client,
                                            dmstream=dmstream,
                                            camstream=camstream,
-                                           darkim=darkim)
+                                           darkim=darkim,
+                                           restore_dm=restore_dm)
 
     # estimate    
     # get fitting params
@@ -397,19 +403,18 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
     if shmim_mask is not None:
         pupil = pupil * shmim_mask
 
-    #estdict['phase'][0] *= amp_mask
-    amp_mask *= pupil
-    phase = estdict['phase'][0] * pupil
+    estdict['phase'][0] *= amp_mask
+    phase = remove_plane(estdict['phase'][0], pupil) * pupil
 
     phase_rms = np.std(phase[pupil])#rms(phase, pupil)
     amp_rms = np.std(amp_norm[pupil])#rms(amp_norm, pupil)
     amp_lnrms = np.std(np.log(amp_norm)[pupil])#rms(np.log(amp_norm), pupil)
-    strehl = get_strehl(phase, amp_norm, amp_mask)
+    strehl, strehl_phase, strehl_amp = get_strehl(phase, amp_norm, pupil)
     #strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
 
     logger.info(f'Estimated phase RMS: {phase_rms:.3} (rad)')
     logger.info(f'Estimated amplitude RMS: {amp_rms*100:.3} (%)')
-    logger.info(f'Estimated Strehl: {strehl}')
+    logger.info(f'Estimated Strehl: {strehl:.2f} ({strehl_phase:.2f} phase-only and {strehl_amp:.2f} amplitude-only)')
 
     if update_shmim:
         update_estimate_shmims(phase * amp_mask, amp, config_params)
@@ -426,8 +431,10 @@ def get_strehl(phase, amplitude, mask):
     log_amp = np.log(amp)
     varlogamp = np.var(log_amp[mask])
 
-    varphase = np.var(phase[mask])    
-    return np.exp(-varphase) * np.exp(-varlogamp)
+    varphase = np.var(phase[mask])  
+    strehl_phase = np.exp(-varphase)
+    strehl_amp = np.exp(-varlogamp)  
+    return strehl_phase * strehl_amp, strehl_phase, strehl_amp
 
 
 def update_estimate_shmims(phase, amp, config_params):
@@ -488,7 +495,7 @@ def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_
     return {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
 def replace_symlink(symfile, newfile):
-    if path.exists(symfile):
+    if path.islink(symfile) or path.exists(symfile):
         remove(symfile)
     symlink(newfile, symfile)
     logger.info(f'symlinked {newfile} to {symfile}')
