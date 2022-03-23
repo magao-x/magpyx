@@ -155,7 +155,7 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
     }
 
 
-def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None, param_func=get_magaox_fitting_params, restore_dm=True):
+def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=None, camstream=None, darkim=None, wfsmask=None, param_func=get_magaox_fitting_params, restore_dm=True, default_steps=None, steps_noxy=None):
     '''
     wfsfunc for closed loop control: measure and return pupil-plane phase vector
     '''
@@ -176,7 +176,7 @@ def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=
     estdict, fitting_params, imcube = estimate_oneshot(config_params, update_shmim=True, write_out=False,
                                client=client, dmstream=dmstream, camstream=camstream,
                                darkim=darkim, param_func=param_func, shmim_mask=shmim_mask,
-                               restore_dm=restore_dm)
+                               restore_dm=restore_dm, default_steps=default_steps, steps_noxy=steps_noxy)
 
     # remove ptt and return (I guess)
     # ugh, the wfsmask is defined within the fit region
@@ -364,7 +364,7 @@ def measure_response_matrix(config_params):
 
     return imcube.swapaxes(0,1)
 
-def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None, param_func=get_magaox_fitting_params, shmim_mask=None, restore_dm=True):
+def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=None, dmstream=None, camstream=None, darkim=None, param_func=get_magaox_fitting_params, shmim_mask=None, restore_dm=True, steps_noxy=None, default_steps=None):
 
     imcube = take_measurements_from_config(config_params,
                                            client=client,
@@ -387,7 +387,9 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
     estdict = estimate_response_matrix([imcube,], # not sure if this is the function I want to use
                                        fitting_params,
                                        processes=config_params.get_param('estimation', 'nproc', int),
-                                       gpus=config_params.get_param('estimation', 'gpus', int))     
+                                       gpus=config_params.get_param('estimation', 'gpus', int),
+                                       steps_noxy=steps_noxy,
+                                       default_steps=default_steps)     
 
     # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
     pupil = fitting_params['pupil_analytic'].astype(bool)
@@ -477,7 +479,7 @@ def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_
         xk = r0[0]['param_dict']['xk'][0]
         yk = r0[0]['param_dict']['yk'][0]
         init_phase = r0[0]['phase']
-        if steps_noxy is None:
+        if (steps_noxy is None):
             steps = STEPS_NOXY
         else:
             steps = steps_noxy

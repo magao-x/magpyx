@@ -74,7 +74,7 @@ def console_compute_control_matrix():
     mname, fname = calib_func.rsplit('.', 1)
     mod = import_module(mname)
     param_func = getattr(mod, fname)
-
+    
     compute_control_matrix(config_params, write=True, param_func=param_func)
 
 def console_measure_response_matrix():
@@ -134,8 +134,20 @@ def console_estimate_oneshot():
     mod = import_module(mname)
     param_func = getattr(mod, fname)
 
+    # get default steps
+    config_steps = config_params.get_param('calibration', 'default_steps', str)
+    mname, fname = config_steps.rsplit('.', 1)
+    mod = import_module(mname)
+    default_steps = getattr(mod, fname)
+
+    # get default steps (no xy)
+    config_steps = config_params.get_param('calibration', 'default_steps_noxy', str)
+    mname, fname = config_steps.rsplit('.', 1)
+    mod = import_module(mname)
+    default_steps_noxy = getattr(mod, fname)
+
     # do the thing
-    estimate_oneshot(config_params, update_shmim=args.shmims, write_out=args.write, param_func=param_func)
+    estimate_oneshot(config_params, update_shmim=args.shmims, write_out=args.write, param_func=param_func, steps_noxy=default_steps_noxy, default_steps=default_steps)
 
 def console_estimate_response_matrix():
 
@@ -177,6 +189,18 @@ def console_estimate_response_matrix():
     mod = import_module(mname)
     param_func = getattr(mod, fname)
 
+    # get default steps
+    config_steps = config_params.get_param('calibration', 'default_steps', str)
+    mname, fname = config_steps.rsplit('.', 1)
+    mod = import_module(mname)
+    default_steps = getattr(mod, fname)
+
+    # get default steps (no xy)
+    config_steps = config_params.get_param('calibration', 'default_steps_noxy', str)
+    mname, fname = config_steps.rsplit('.', 1)
+    mod = import_module(mname)
+    default_steps_noxy = getattr(mod, fname)
+
     fitting_params = param_func(camera=config_params.get_param('camera', 'name', str),
                                                wfilter=config_params.get_param('diversity', 'wfilter', str),
                                                mask=config_params.get_param('estimation', 'pupil', str),
@@ -190,7 +214,9 @@ def console_estimate_response_matrix():
     estdict = estimate_response_matrix(image_cube, fitting_params,
                                        processes=config_params.get_param('estimation', 'nproc', int),
                                        gpus=config_params.get_param('estimation', 'gpus', int),
-                                       fix_xy_to_first=config_params.get_param('interaction', 'fix_xy_to_first', bool))
+                                       fix_xy_to_first=config_params.get_param('interaction', 'fix_xy_to_first', bool),
+                                       default_steps=default_steps,
+                                       steps_noxy=default_steps_noxy)
     pupil = fitting_params['pupil_analytic'].astype(bool)
     estrespM = np.asarray(estdict['phase']) * pupil
 
