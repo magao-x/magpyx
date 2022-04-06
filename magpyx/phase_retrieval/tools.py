@@ -11,7 +11,7 @@ from astropy.io import fits
 import numpy as np
 from skimage.filters.thresholding import threshold_otsu
 
-from ..utils import ImageStream, create_shmim
+from ..utils import ImageStream, create_shmim, str2bool
 from ..instrument import take_dark
 from ..dm.dmutils import get_hadamard_modes, map_vector_to_square
 from ..dm import control
@@ -196,7 +196,7 @@ def measure_and_estimate_focal_field():
 def close_loop(config_params):
 
     # skip INDI?
-    skip_indi = config_params.get_param('diversity', 'skip_indi', bool)
+    skip_indi = config_params.get_param('diversity', 'skip_indi', str2bool)
 
     # open indi client connection
     if skip_indi:

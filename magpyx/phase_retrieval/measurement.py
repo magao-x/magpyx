@@ -7,7 +7,7 @@ from astropy.io import fits
 from purepyindi import INDIClient
 
 from ..imutils import register_images, slice_to_valid_shape, center_of_mass
-from ..utils import ImageStream, indi_send_and_wait
+from ..utils import ImageStream, indi_send_and_wait, str2bool
 from ..instrument import move_stage, take_dark
 
 import logging
@@ -16,7 +16,9 @@ logger = logging.getLogger('fdpr')
 
 def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmstream=None, dmdivstream=None, camstream=None, darkim=None,  restore_dm=True):
     
-    skip_indi = config_params.get_param('diversity', 'skip_indi', bool)
+    skip_indi = config_params.get_param('diversity', 'skip_indi', str2bool)
+
+    print('INDI STATE ', skip_indi)
 
     if (client is None) and (not skip_indi):
         # open indi client connection
