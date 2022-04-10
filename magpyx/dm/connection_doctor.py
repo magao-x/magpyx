@@ -196,7 +196,7 @@ def display_actuator_connections(filename=default_mapfile):
 
     format_mpl_coord_2K(ax)
     format_mpl_connection_2K(im, conn_types)
-
+    fig.tight_layout()
     return fig, ax
 
 def get_actuator_connections(filename=default_mapfile):
