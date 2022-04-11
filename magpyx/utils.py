@@ -133,7 +133,9 @@ class ImageStream(shmio.Image):
         if list(curshape) != list(expected_shape):
             logger.info(f'Got shape {curshape} but expected shape {expected_shape}. Destroying and re-creating.')
             self.destroy()
-            self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
+            #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
+            buffer = np.zeros(expected_shape)
+            img.create(self.name, buffer, -1, True, 8, 1, dtype, 1)
 
     @_is_open
     def close(self):
@@ -182,7 +184,9 @@ def create_shmim(name, dims, dtype=shmio.ImageStreamIODataType.FLOAT, shared=1, 
     # if ImageStream objects didn't auto-open on creation, you could create and return that instead. oops.
     img = shmio.Image()
     # not sure if I should try to destroy first in case it already exists
-    img.create(name, dims, dtype, shared, nbkw)
+    #img.create(name, dims, dtype, shared, nbkw)
+    buffer = np.zeros(dims)
+    img.create(name, buffer, -1, True, 8, 1, dtype, 1)
     img.close()
 
 def send_dm_poke(shmim_name, x, y, val):
