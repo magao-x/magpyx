@@ -274,5 +274,8 @@ def console_tweeter_V2um():
     um = dmutils.tweeter_V_to_um(args.V)
     print(f'{um:.2f} um')
 
+def str2bool(v):
+    return str(v).lower() in ('true', '1')
+
 if __name__ == '__main__':
     pass

@@ -244,6 +244,7 @@ def interpolate_dm_modes(dm_mode_matrix, active_mask, dm_map, dm_mask, n=1):
     n = couple_matrix.shape[0]
     
     # a matrix multiply does the interpolation
+    #print(dm_mode_matrix.shape, couple_matrix.shape)
     interpolated_modes = np.dot(dm_mode_matrix, np.eye(n) + couple_matrix)
     
     return interpolated_modes
