@@ -18,7 +18,7 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
     
     skip_indi = config_params.get_param('diversity', 'skip_indi', str2bool)
 
-    print('INDI STATE ', skip_indi)
+   # print('INDI STATE ', skip_indi)
 
     if (client is None) and (not skip_indi):
         # open indi client connection
@@ -34,11 +34,9 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
         camname = config_params.get_param('camera', 'name', str)
         camstream = ImageStream(camname)
 
-    if darkim is None and (not skip_indi):
+    if (darkim is None) and (not skip_indi):
         # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
         darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
-    else:
-        darkim = None
 
     dmdelay = config_params.get_param('diversity', 'dmdelay', float)
     indidelay = config_params.get_param('diversity', 'indidelay', float)
