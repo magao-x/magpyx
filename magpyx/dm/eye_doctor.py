@@ -306,18 +306,18 @@ def get_image_coresum(arrlist, radius=10, cenyx=None, skip_frames=None):
         else:
             ceny = cenyx[0]
             cenx = cenyx[1]
-        circ_centroid = draw.circle(ceny, cenx, radius2, im_bgsub.shape)
+        circ_centroid = draw.disk((ceny, cenx), radius2, shape=im_bgsub.shape)
         circmask_centroid = np.zeros(im_bgsub.shape, dtype=bool)
         circmask_centroid[circ_centroid] = 1
         y, x = center_of_mass(im_bgsub * circmask_centroid)
 
         # core mask
-        circ1 = draw.circle(y, x, radius, im_bgsub.shape)
+        circ1 = draw.disk((y, x), radius, shape=im_bgsub.shape)
         circmask = np.zeros(im_bgsub.shape, dtype=bool)
         circmask[circ1] = 1
 
         # annulus
-        circ2 = draw.circle(y, x, radius2, im_bgsub.shape)
+        circ2 = draw.disk((y, x), radius2, shape=im_bgsub.shape)
         annulus_mask = np.zeros(im_bgsub.shape, dtype=bool)
         annulus_mask[circ2] = 1
         annulus_mask[circ1] = 0
@@ -343,18 +343,18 @@ def get_image_core_ring_ratio(arrlist, radius1=10, radius2=20):
         # two step centroid: plop down a mask of radius2 and then
         # center of mass to refine the centroid
         ceny, cenx = np.where(im_bgsub == im_bgsub.max())
-        circ_centroid = draw.circle(ceny[0], cenx[0], radius2, im_bgsub.shape)
+        circ_centroid = draw.disk((ceny[0], cenx[0]), radius2, shape=im_bgsub.shape)
         circmask_centroid = np.zeros(im_bgsub.shape, dtype=bool)
         circmask_centroid[circ_centroid] = 1
         y, x = center_of_mass(im_bgsub * circmask_centroid)
 
         # core mask
-        circ1 = draw.circle(y, x, radius1, im_bgsub.shape)
+        circ1 = draw.disk((y, x), radius1, shape=im_bgsub.shape)
         circmask = np.zeros(im_bgsub.shape, dtype=bool)
         circmask[circ1] = 1
 
         # annulus
-        circ2 = draw.circle(y, x, radius2, im_bgsub.shape)
+        circ2 = draw.disk((y, x), radius2, shape=im_bgsub.shape)
         annulus_mask = np.zeros(im_bgsub.shape, dtype=bool)
         annulus_mask[circ2] = 1
         annulus_mask[circ1] = 0

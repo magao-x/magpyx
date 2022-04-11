@@ -150,14 +150,14 @@ def fill_in_slaved_cmds(cmd_vec, slaved_vec_idx, neighbor_mapping):
 
 def plop_down_a_mask_on_a_location(y, x, r, shape):
     mask = np.zeros(shape, dtype=bool)
-    idx = draw.circle(y, x, r, shape)
+    idx = draw.disk((y, x), r, shape=shape)
     mask[idx] = 1
     return mask
 
 def remove_lo_from_if(image, mask, zbasis):
     im = image
     act_loc = np.where(im*mask == (im*mask).min())
-    circ_idx = draw.circle(act_loc[0][0], act_loc[1][0], 15, shape=image.shape)
+    circ_idx = draw.disk((act_loc[0][0], act_loc[1][0]), 15, shape=image.shape)
     circ_mask = np.ones_like(mask)
     circ_mask[circ_idx] = 0
     tot_mask = mask & circ_mask
