@@ -109,7 +109,7 @@ def center_of_mass(image):
     return xp.average(indices[0], axis=None, weights=image), xp.average(indices[1], axis=None, weights=image)
 
 def get_median(image, axis=None):
-    if isinstance(image, cp.core.ndarray):
+    if isinstance(image, cp.ndarray):
         image = cp.asnumpy(image)
     return np.median(image, axis=axis)
 
@@ -234,7 +234,7 @@ def obj_func(params, keys, ukeys, key_param_mapping, param_dict, meas_psfs, weig
     # weighted sum of objective funcs
     obj = get_Phi(weighting, Gk, Gkhat) + lambda1 * phi_1 + lambda2 * phi_2
 
-    if isinstance(obj, cp.core.ndarray):
+    if isinstance(obj, cp.ndarray):
         obj = cp.asnumpy(obj)
     
     # compute the Jacobian terms
@@ -734,7 +734,7 @@ def multi_step_fit(measured_psfs, pupil, z0vals, zbasis, wavelen, z0, weighting,
     if gpu:
         # convert as necessary param_dict terms from GPU to CPU memory
         for key, values in curdict.items():
-            if isinstance(values[0], cp.core.ndarray):
+            if isinstance(values[0], cp.ndarray):
                 curdict[key][0] = cp.asnumpy(values[0])
         pupil = cp.asnumpy(pupil)
         zbasis = cp.asnumpy(zbasis)
