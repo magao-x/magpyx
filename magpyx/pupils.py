@@ -30,8 +30,8 @@ def get_coronagraphic_pupil(delta_phys, N, extra_rot=0):
     D = 8.604e-3
     D_sm = 2.79e-3
     
-    Didx = draw.circle(cen, cen, D/delta_phys/2, shape=(N,N))
-    Dsm_idx = draw.circle(cen, cen, D_sm/delta_phys/2, shape=(N,N))
+    Didx = draw.disk((cen, cen), D/delta_phys/2, shape=(N,N))
+    Dsm_idx = draw.disk( (cen, cen), D_sm/delta_phys/2, shape=(N,N))
     
     pupil_analytic[Didx] = 1
     pupil_analytic[Dsm_idx] = 0
@@ -62,7 +62,7 @@ def get_coronagraphic_pupil(delta_phys, N, extra_rot=0):
     bx = cen+2.853e-3 / delta_phys
     br = 0.5742e-3 / delta_phys / 2.
     byr, bxr = rotate([by,], [bx,], extra_rot, ceny=cen, cenx=cen)
-    bidx = draw.circle(byr[0], bxr[0], br, shape=(N,N))
+    bidx = draw.disk( (byr[0], bxr[0]), br, shape=(N,N))
     pupil_analytic[bidx] = 0
     
     return pupil_analytic
@@ -77,8 +77,8 @@ def get_open_pupil(delta_phys, N, extra_rot=0):
     D = 9e-3
     D_sm = 0.3 * D #0.239 * D
     
-    Didx = draw.circle(cen, cen, D/delta_phys/2, shape=(N,N))
-    Dsm_idx = draw.circle(cen, cen, D_sm/delta_phys/2, shape=(N,N))
+    Didx = draw.disk( (cen, cen), D/delta_phys/2, shape=(N,N))
+    Dsm_idx = draw.disk( (cen, cen), D_sm/delta_phys/2, shape=(N,N))
     
     pupil_analytic[Didx] = 1
     pupil_analytic[Dsm_idx] = 0
