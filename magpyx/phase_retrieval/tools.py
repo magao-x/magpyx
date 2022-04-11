@@ -178,6 +178,8 @@ def measure_and_estimate_phase_vector(config_params=None, client=None, dmstream=
                                darkim=darkim, param_func=param_func, shmim_mask=shmim_mask,
                                restore_dm=restore_dm, default_steps=default_steps, steps_noxy=steps_noxy)
 
+    #estimate_oneshot(config_params, update_shmim=True, write_out=False, param_func=param_func, steps_noxy=steps_noxy, default_steps=default_steps)
+
     # remove ptt and return (I guess)
     # ugh, the wfsmask is defined within the fit region
     fitting_slice = fitting_params['fitting_slice']
@@ -243,6 +245,18 @@ def close_loop(config_params):
     mod = import_module(mname)
     param_func = getattr(mod, fname)
 
+    # get default steps
+    config_steps = config_params.get_param('calibration', 'default_steps', str)
+    mname, fname = config_steps.rsplit('.', 1)
+    mod = import_module(mname)
+    default_steps = getattr(mod, fname)
+
+    # get default steps (no xy)
+    config_steps = config_params.get_param('calibration', 'default_steps_noxy', str)
+    mname, fname = config_steps.rsplit('.', 1)
+    mod = import_module(mname)
+    default_steps_noxy = getattr(mod, fname)
+
     # set up the wfs function
     wfsfuncdict = {
         'config_params' : config_params,
@@ -251,9 +265,14 @@ def close_loop(config_params):
         'camstream' : camstream,
         'darkim' : darkim,
         'wfsmask' : wfsmask,
-        'param_func' : param_func
-        #'restore_dm' : False
+        'param_func' : param_func,
+        'default_steps' : default_steps,
+        'steps_noxy' : default_steps_noxy,
+        'restore_dm' : False
     }
+
+    #estimate_oneshot(config_params, update_shmim=True, write_out=False, param_func=param_func, steps_noxy=default_steps_noxy, default_steps=default_steps)
+
     wfsfunc = measure_and_estimate_phase_vector
     
     control.closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=niter, gain=gain,
@@ -386,8 +405,8 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False, client=N
 
     estdict = estimate_response_matrix([imcube,], # not sure if this is the function I want to use
                                        fitting_params,
-                                       processes=config_params.get_param('estimation', 'nproc', int),
-                                       gpus=config_params.get_param('estimation', 'gpus', int),
+                                       processes=1,#config_params.get_param('estimation', 'nproc', int),
+                                       gpus=0,#config_params.get_param('estimation', 'gpus', int),
                                        steps_noxy=steps_noxy,
                                        default_steps=default_steps)     
 
