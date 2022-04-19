@@ -157,7 +157,7 @@ def rotate(cy, cx, angle, ceny=0, cenx=0):
     return np.dot(rot_matrix(np.deg2rad(angle), y=ceny, x=cenx).T, np.asarray([cy, cx, np.ones(len(cy))]))
 
 def shift_via_fourier(image, xk, yk, force_real=False,):
-    xp = get_array_module(image)
+    xp = cp.get_array_module(image)
     out =  ifft2_shiftnorm(fft2_shiftnorm(image, shift=False)*my_fourier_shift(xk, yk, image.shape, xp=xp), shift=False)
     if force_real:
         return out.real

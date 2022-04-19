@@ -603,7 +603,7 @@ lambda2 = 0.25 #0.125
 kappa1 = 1
 kappa2 = 1
 
-DEFAULT_STEPS = [
+'''DEFAULT_STEPS = [
     # lateral
     {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial
@@ -626,14 +626,37 @@ DEFAULT_STEPS = [
     {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
     # lateral + axial + phase (pixel) + amplitude (pixel)
     {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : True, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+]'''
+
+DEFAULT_STEPS = [
+    # lateral
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral + zcoeffs
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : True, 'point_by_point_phase' : False, 'point_by_point_ampB' : False, 'opt_options' : DEFAULT_OPTIONS},
+    # phase: rough
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : rough_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral + phase (fine)
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : fine_smooth}, 'opt_options' : DEFAULT_OPTIONS},
+    # amplitude: rough
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' :fine_smooth, 'amp_smoothing' : rough_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    # amplitude: fine
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : fine_smooth, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral  + phase (fine) + amplitude (fine)
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : fine_smooth, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    # phase: pixel
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : False, 'arg_options' : {'smoothing' : very_fine, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    # amplitude: pixel
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : False, 'yk' : False, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : False, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
+    # lateral  + phase (pixel) + amplitude (pixel)
+    {'bg' : False, 'focal_plane_blur' : False, 'xk' : True, 'yk' : True, 'zk' : False, 'zcoeffs' : False, 'point_by_point_phase' : True, 'point_by_point_ampB' : True, 'arg_options' : {'smoothing' : very_fine, 'amp_smoothing' : fine_smooth, 'lambda1' : lambda1, 'lambda2' : lambda2, 'kappa1' : kappa1, 'kappa2' : kappa2}, 'opt_options' : DEFAULT_OPTIONS},
 ]
 
 # copy DEFAULT_STEPS but disable (x,y) fitting
 STEPS_NOXY = deepcopy(DEFAULT_STEPS)
 STEPS_NOXY.pop(0)
+STEPS_NOXY.pop(0)
 for step in STEPS_NOXY:
-    step['xk'] =  step['yk'] = False
-
+    step['xk'] =  step['yk'] = step['zk'] = False
 
 def estimate_phase_from_measured_psfs(meas_psfs, param_dict, pupil, zbasis, wavelen, f, pupil_coords, focal_coords, static_phase, weighting, arg_options={}, options={}, method='L-BFGS-B', jac=True):
     '''
@@ -759,7 +782,7 @@ def get_weights(imcube, fudge_factor=20):
     weights /= np.nanmax(weights,axis=(-2,-1))[:,None,None]
     return weights
 
-def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS):
+def process_phase_retrieval(psfs, params, weights=None, input_phase=None, input_amp=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS):
     '''
     This is a wrapper around multi_step_fit, to handle a lot of the data wrangling.
     '''
@@ -785,7 +808,10 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
     zbasis_shifted = np.fft.fftshift(params['zbasis'], axes=(-2,-1))
 
     # smooth and shift for input pupil guess
-    input_amp = np.fft.fftshift(gauss_convolve(params['pupil_analytic'] + 1e-3 * params['fitting_region'],2))
+    if input_amp is None:
+        input_amp = np.fft.fftshift(gauss_convolve(params['pupil_analytic'] + 1e-3 * params['fitting_region'],2))
+    else:
+        input_amp = np.fft.fftshift(np.array(input_amp))
 
     psfs_shifted = np.fft.fftshift(psfs.astype(np.float64), axes=(-2,-1))
     weights_shifted = np.fft.fftshift(weights, axes=(-2,-1))
@@ -821,14 +847,14 @@ def process_phase_retrieval(psfs, params, weights=None, input_phase=None, xk_in=
         'Gkhat' : np.fft.ifftshift(Gkhat, axes=(-2,-1))
     }
 
-def _process_phase_retrieval_mpfriendly(params, input_phase, xk_in, yk_in, focal_plane_blur, gpu, method, steps, options, psfs):
+def _process_phase_retrieval_mpfriendly(params, input_phase, input_amp, xk_in, yk_in, focal_plane_blur, gpu, method, steps, options, psfs):
     #psfs, gpu_id = psfs_gpus
     #with cp.cuda.device.Device(gpu_id):
-    out = process_phase_retrieval(psfs, params, input_phase=input_phase, xk_in=xk_in, yk_in=yk_in,
+    out = process_phase_retrieval(psfs, params, input_phase=input_phase, input_amp=input_amp, xk_in=xk_in, yk_in=yk_in,
                                 focal_plane_blur=focal_plane_blur, gpu=gpu, method=method, steps=steps, options=options)
     return out
 
-def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, gpus=None, processes=2):
+def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, input_amp=None, xk_in=None, yk_in=None, focal_plane_blur=0, gpu=True, method='L-BFGS-B', steps=DEFAULT_STEPS, options=DEFAULT_OPTIONS, gpus=None, processes=2):
     '''
     gpus = list of GPUs to use, for example: [0,1,2]
     processes = number of processes PER GPU
@@ -842,7 +868,7 @@ def multiprocess_phase_retrieval(allpsfs, params, input_phase=None, xk_in=None, 
         logger.warning(e)
 
     # TO DO: figure out if this still needs to be sequential or can be the original multiprocess_phase_retrieval
-    mpfunc = partial(_process_phase_retrieval_mpfriendly, params, input_phase, xk_in, yk_in,
+    mpfunc = partial(_process_phase_retrieval_mpfriendly, params, input_phase, input_amp, xk_in, yk_in,
                      focal_plane_blur, gpu, method, steps, options)
 
     # There's a weird possibly memory-related issue that prevents us from simply
