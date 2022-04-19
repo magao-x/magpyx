@@ -268,7 +268,7 @@ def close_loop(config_params):
         'param_func' : param_func,
         'default_steps' : default_steps,
         'steps_noxy' : default_steps_noxy,
-        'restore_dm' : False
+        'restore_dm' : True
     }
 
     #estimate_oneshot(config_params, update_shmim=True, write_out=False, param_func=param_func, steps_noxy=default_steps_noxy, default_steps=default_steps)
@@ -332,6 +332,8 @@ def compute_control_matrix(config_params, nmodes=None, write=True, param_func=ge
         nmodes = config_params.get_param('control', 'nmodes', int)
 
     remove_modes = config_params.get_param('control', 'remove_modes', int)
+    tikreg = config_params.get_param('control', 'tikreg', float)
+    regtype = config_params.get_param('control', 'regtype', str)
 
     ctrldict = control.get_control_matrix_from_hadamard_measurements(hmeas,
                                                                      hmodes,
@@ -342,7 +344,9 @@ def compute_control_matrix(config_params, nmodes=None, write=True, param_func=ge
                                                                      dmthresh=dmthresh,
                                                                      ninterp=ninterp,
                                                                      nmodes=nmodes,
-                                                                     remove_modes=remove_modes)
+                                                                     remove_modes=remove_modes,
+                                                                     regtype=regtype,
+                                                                     treg=tikreg)
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -498,6 +502,7 @@ def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_
         xk = r0[0]['param_dict']['xk'][0]
         yk = r0[0]['param_dict']['yk'][0]
         init_phase = r0[0]['phase']
+        init_amp = r0[0]['amp']
         if (steps_noxy is None):
             steps = STEPS_NOXY
         else:
@@ -509,9 +514,10 @@ def estimate_response_matrix(image_cube, params, processes=2, gpus=None, fix_xy_
             steps = default_steps
         xk = yk = None
         init_phase = None
+        init_amp = None
         
     # do all the processing
-    rlist = multiprocess_phase_retrieval(image_cube, params, input_phase=init_phase, processes=processes, gpus=gpus, steps=steps, xk_in=xk, yk_in=yk)
+    rlist = multiprocess_phase_retrieval(image_cube, params, input_phase=init_phase, input_amp=init_amp, processes=processes, gpus=gpus, steps=steps, xk_in=xk, yk_in=yk)
     # turn list of dictionaries into dictionary of lists
     return {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
