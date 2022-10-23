@@ -138,7 +138,7 @@ class ImageStream(shmio.Image):
             self.destroy()
             #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
             buffer = np.zeros(expected_shape)
-            img.create(self.name, buffer, -1, True, 8, 1, dtype, 1)
+            self.create(self.name, buffer, -1, True, 8, 1, shmio.ImageStreamIODataType.FLOAT, 1)
 
     @_is_open
     def close(self):
@@ -279,7 +279,7 @@ def create_shmim(name, dims, dtype=shmio.ImageStreamIODataType.FLOAT, shared=1, 
     #img.create(name, dims, dtype, shared, nbkw)
     buffer = np.zeros(dims)
     img.create(name, buffer, -1, True, 8, 1, dtype, 1)
-    img.close()
+    #img.close()
 
 def send_dm_poke(shmim_name, x, y, val):
     with ImageStream(shmim_name) as shmim:
