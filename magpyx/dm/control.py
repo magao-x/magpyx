@@ -167,10 +167,16 @@ def get_ifcube_from_hmeas(hmeas, hmodes, hval, nact=None, deltas=False):
     Reconstruct the influence function cube from the measured WFS
     response to +/- hadamard modes
     '''
-    shape = hmodes.shape # better be a square matrix
-    shape_wfs = hmeas.shape[-2:]
+    shape = hmodes.shape # better be a square matrix    
     if shape[0] != shape[1]:
         raise ValueError(f'hmodes must be a square matrix, but got shape {shape}!')
+
+    if hmeas.ndim == 3:
+        shape_wfs = hmeas.shape[-2:]
+    elif hmeas.ndim == 2:
+        shape_wfs = hmeas.shape[-1:]
+    else:
+        raise ValueError('WFS measurements are 1D. Was that intentional?')
 
     if nact is None:
         nact = shape[0]
@@ -209,7 +215,12 @@ def get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=0.5):
         dm_ctrl_mask : ndarray
             Nact x Nact binary array of actively-controlled/illuminated actuators
     '''
-    rms_dm = np.sqrt(np.mean(ifcube**2,axis=(-2,-1)))
+    if ifcube.ndim == 3:
+        rms_dm = np.sqrt(np.mean(ifcube**2,axis=(-2,-1)))
+    elif ifcube.ndim == 2:
+         rms_dm = np.sqrt(np.mean(ifcube**2,axis=-1))
+    else:
+        raise ValueError('The IF cube is 1D. Was that intentional?')
     dm_ctrl_map = dmutils.map_vector_to_square(rms_dm, dm_map, dm_mask)
     thresh_dm = threshold_otsu(dm_ctrl_map[dm_mask.astype(bool)])
     dm_ctrl_mask = dm_ctrl_map > (thresh_dm*threshold)
