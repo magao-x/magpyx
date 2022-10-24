@@ -5,7 +5,7 @@ except ImportError:
     print('Could not import cupy. You may lose functionality.')
     cp = None
 
-import pyfftw
+#import pyfftw
 from scipy.optimize import leastsq
 #from skimage.feature import register_translation
 from skimage.registration import phase_cross_correlation as register_translation
@@ -120,8 +120,8 @@ def fft2_shiftnorm(image, axes=None, norm='ortho', shift=True):
         shiftfunc = ishiftfunc = lambda x, axes=None: x
 
     if isinstance(image, np.ndarray):
-        t = pyfftw.builders.fft2(ishiftfunc(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
-        return shiftfunc(t(),axes=axes)
+        t = np.fft.fft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm) #pyfftw.builders.fft
+        return shiftfunc(t,axes=axes)
     else:
         return shiftfunc(cp.fft.fft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm), axes=axes)
     
@@ -142,8 +142,8 @@ def ifft2_shiftnorm(image, axes=None, norm='ortho', shift=True):
         shiftfunc = ishiftfunc = lambda x, axes=None: x
 
     if isinstance(image, np.ndarray):
-        t = pyfftw.builders.ifft2(ishiftfunc(image, axes=axes), axes=axes, threads=8, planner_effort='FFTW_ESTIMATE', norm=norm)
-        return shiftfunc(t(), axes=axes)
+        t =np.fft.ifft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm) # pyfftw.builders.ifft2
+        return shiftfunc(t, axes=axes)
     else:
         return shiftfunc(cp.fft.ifft2(ishiftfunc(image, axes=axes), axes=axes, norm=norm), axes=axes)
 
@@ -157,7 +157,7 @@ def rotate(cy, cx, angle, ceny=0, cenx=0):
     return np.dot(rot_matrix(np.deg2rad(angle), y=ceny, x=cenx).T, np.asarray([cy, cx, np.ones(len(cy))]))
 
 def shift_via_fourier(image, xk, yk, force_real=False,):
-    xp = get_array_module(image)
+    xp = cp.get_array_module(image)
     out =  ifft2_shiftnorm(fft2_shiftnorm(image, shift=False)*my_fourier_shift(xk, yk, image.shape, xp=xp), shift=False)
     if force_real:
         return out.real

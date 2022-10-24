@@ -36,7 +36,7 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5,
     matrix.
     '''    
     # set up integrator
-    cmd = np.zeros_like(dmstream.buffer)
+    cmd = dmstream.grab_latest() #np.zeros_like(dmstream.buffer)
 
     allcmds = []
     allresid = []
@@ -75,7 +75,7 @@ def remove_modes_from_if(ifcube, modes, wfsmask):
 
     return np.asarray([remove_zernikes(im, modes, wfsmask) for im in ifcube])
 
-def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, deltas=False, remove_modes=None):
+def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, regtype='truncate', treg='1e-16', deltas=False, remove_modes=None):
     '''
     Given a measurement cube of WFS measurements of +/- hadamard modes with amplitude hval,
     return the reconstructed IF matrix, DMmodes, WFSmodes, DM and WFS maps/masks, and the control/reconstructor matrix
@@ -112,7 +112,7 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     dmmodes_interp = interpolate_dm_modes(dmmodes, dm_ctrl_mask, dm_map, dm_mask, n=ninterp)
 
     # get control matrix
-    ctrl = get_control_matrix(dmmodes_interp, wfsmodes, singvals, nmodes=nmodes)
+    ctrl = get_control_matrix(dmmodes_interp, wfsmodes, singvals, nmodes=nmodes, regtype=regtype, treg=treg)
 
     return {
         'ifmat' : ifcube_active,
@@ -126,7 +126,7 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
         'ctrlmat' : ctrl
     }
 
-def get_control_matrix(dmmodes, wfsmodes, singvals, nmodes=None):
+def get_control_matrix(dmmodes, wfsmodes, singvals, nmodes=None, regtype='truncate', treg=1e-16):
     '''
     Compute the control matrix from a pseudo-inverse via regularized SVD components
     '''
@@ -138,8 +138,15 @@ def get_control_matrix(dmmodes, wfsmodes, singvals, nmodes=None):
 
     # construct regularized S^{-1}
     Sinv = np.zeros((nact, nwfs))
-    sinv = 1./singvals
-    sinv[nmodes:] *= 0
+    if regtype.upper() == 'TRUNCATE':
+        sinv = 1./singvals
+        sinv[nmodes:] *= 0
+    elif (regtype.upper() == 'TIKHONOV') or (regtype.upper() == 'HYBRID') :
+        sinv = singvals / ( singvals**2 + (treg*singvals.max())**2 )
+        if regtype.upper() == 'HYBRID':
+            sinv[nmodes:] *= 0
+    else:
+        raise ValueError(f'Regularization type not understood. Must be truncate, tikhonov, or hybrid. Got {regtype} instead.')
     np.fill_diagonal(Sinv, sinv)
 
     # pseudo-inverse calc
@@ -160,10 +167,16 @@ def get_ifcube_from_hmeas(hmeas, hmodes, hval, nact=None, deltas=False):
     Reconstruct the influence function cube from the measured WFS
     response to +/- hadamard modes
     '''
-    shape = hmodes.shape # better be a square matrix
-    shape_wfs = hmeas.shape[-2:]
+    shape = hmodes.shape # better be a square matrix    
     if shape[0] != shape[1]:
         raise ValueError(f'hmodes must be a square matrix, but got shape {shape}!')
+
+    if hmeas.ndim == 3:
+        shape_wfs = hmeas.shape[-2:]
+    elif hmeas.ndim == 2:
+        shape_wfs = hmeas.shape[-1:]
+    else:
+        raise ValueError('WFS measurements are 1D. Was that intentional?')
 
     if nact is None:
         nact = shape[0]
@@ -202,7 +215,12 @@ def get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=0.5):
         dm_ctrl_mask : ndarray
             Nact x Nact binary array of actively-controlled/illuminated actuators
     '''
-    rms_dm = np.sqrt(np.mean(ifcube**2,axis=(-2,-1)))
+    if ifcube.ndim == 3:
+        rms_dm = np.sqrt(np.mean(ifcube**2,axis=(-2,-1)))
+    elif ifcube.ndim == 2:
+         rms_dm = np.sqrt(np.mean(ifcube**2,axis=-1))
+    else:
+        raise ValueError('The IF cube is 1D. Was that intentional?')
     dm_ctrl_map = dmutils.map_vector_to_square(rms_dm, dm_map, dm_mask)
     thresh_dm = threshold_otsu(dm_ctrl_map[dm_mask.astype(bool)])
     dm_ctrl_mask = dm_ctrl_map > (thresh_dm*threshold)

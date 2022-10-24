@@ -1,3 +1,6 @@
+import multiprocessing as mp
+from time import time, sleep
+
 import purepyindi as indi
 import numpy as np
 import ImageStreamIOWrap as shmio
@@ -102,7 +105,7 @@ class ImageStream(shmio.Image):
         if expected_shape is not None:
             self.check_shape(expected_shape)
 
-        self.buffer = np.array(self, copy=False).T
+        self.buffer = np.array(self, copy=False, order='F').T
         self.dtype = self.buffer.dtype
         self.naxis = self.md.naxis
         self.semindex = None
@@ -119,7 +122,7 @@ class ImageStream(shmio.Image):
         return np.array(self.buffer[start:stop:step], copy=True)
 
     def write(self, arr):
-        return self._write(np.ascontiguousarray(arr, dtype=self.dtype))
+        return self._write(np.asfortranarray(arr.T, dtype=self.dtype))
 
     def open(self):
         ret = super().open(self.name)
@@ -133,7 +136,9 @@ class ImageStream(shmio.Image):
         if list(curshape) != list(expected_shape):
             logger.info(f'Got shape {curshape} but expected shape {expected_shape}. Destroying and re-creating.')
             self.destroy()
-            self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
+            #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
+            buffer = np.zeros(expected_shape)
+            self.create(self.name, buffer, -1, True, 8, 1, shmio.ImageStreamIODataType.FLOAT, 1)
 
     @_is_open
     def close(self):
@@ -178,12 +183,103 @@ class ImageStream(shmio.Image):
             i += 1
         return cube
 
+    @_is_open
+    def grab_after(self, n, nwait):
+        cnt0 = self.md.cnt0
+        return self.grab_many(n, cnt0_min=cnt0+nwait)
+
+class AsynchronousImageStream(mp.Process):
+    '''
+    Open an ImageStream on a separate process and return results in a queue. (threads get blocked by semwait)
+    
+    Example of usage:
+    >>> stream = AsynchronousImageStream('camsci2') # open
+    >>> nimages = 10
+    >>> nwait = 2
+    >>> stream.grab_asynchronous(stream.grab_after, (nimages, nwait)) # grab some images (call as many times as you want)
+    >>> images = stream.get_queued_images(wait=True) # get queued images
+    >>> stream.stop() # close the thread, queues, and shmim
+    '''
+    
+    def __init__(self, name):
+        super().__init__()
+        self.name = name
+
+        # initialize queues
+        self.queue_in = mp.Queue()
+        self.queue_out = mp.Queue()
+
+        self.start()
+ 
+    def grab_asynchronous(self, func, args=None):
+        task = [func, args, False]
+        self.queue_in.put(task)
+        
+    def run(self):
+        
+        shmim = ImageStream(self.name)
+        while True:
+            task = self.queue_in.get() # get a new task
+            funcstr, args, finish = task
+            
+            if finish:
+                #self.queue_in.task_done()
+                shmim.close()
+                return True
+            
+            func = getattr(shmim, funcstr)
+
+            try:
+                if args is None:
+                    self.queue_out.put_nowait(func())
+                else:
+                    self.queue_out.put_nowait(func(*args))
+            except: # catch something here
+                logger.info('Something went wrong. I dunno.')
+    
+    def get_queued_images(self):
+        allims = []
+        while (not self.queue_out.empty()):
+            im = self.queue_out.get_nowait()
+            allims.append(im)
+        return allims
+    
+    def stop(self, wait=True, timeout=10):
+        
+        # stop the worker function (also closes the shmim)
+        self.queue_in.put([None, None, True])
+        
+        # wait for the worker to stop
+        t0 = time()
+        while self.is_alive() and wait:
+            sleep(0.1)
+            t = time()
+            if (t-t0) >= timeout:
+                break
+            
+        # get abandoned images
+        abandoned_images = self.get_queued_images()
+ 
+        # close the queues
+        self.queue_in.close()
+        self.queue_out.close()
+        
+        # close the multiprocess worker
+        mp.active_children()
+        self.join(timeout=timeout)
+        self.terminate()
+        self.close()
+        
+        return abandoned_images
+
 def create_shmim(name, dims, dtype=shmio.ImageStreamIODataType.FLOAT, shared=1, nbkw=8):
     # if ImageStream objects didn't auto-open on creation, you could create and return that instead. oops.
     img = shmio.Image()
     # not sure if I should try to destroy first in case it already exists
-    img.create(name, dims, dtype, shared, nbkw)
-    img.close()
+    #img.create(name, dims, dtype, shared, nbkw)
+    buffer = np.zeros(dims)
+    img.create(name, buffer, -1, True, 8, 1, dtype, 1)
+    #img.close()
 
 def send_dm_poke(shmim_name, x, y, val):
     with ImageStream(shmim_name) as shmim:
@@ -209,7 +305,7 @@ def send_shmim_to_fits(shmim_name, fitsfile, nimages=1):
 
 def send_zeros_to_shmim(shmim_name):
     with ImageStream(shmim_name) as shmim:
-        zeros = np.zeros_like(shmim.buffer).T
+        zeros = np.zeros_like(shmim.buffer)#.T
         shmim.write(zeros)
 
 def console_send_dm_poke():

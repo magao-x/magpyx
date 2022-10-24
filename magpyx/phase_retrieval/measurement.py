@@ -18,7 +18,7 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
     
     skip_indi = config_params.get_param('diversity', 'skip_indi', str2bool)
 
-    print('INDI STATE ', skip_indi)
+   # print('INDI STATE ', skip_indi)
 
     if (client is None) and (not skip_indi):
         # open indi client connection
@@ -34,11 +34,9 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
         camname = config_params.get_param('camera', 'name', str)
         camstream = ImageStream(camname)
 
-    if darkim is None and (not skip_indi):
+    if (darkim is None) and (not skip_indi):
         # take a dark (eventually replace this with the INDI dark [needs some kind of check to see if we have a dark, I guess])
         darkim = take_dark(camstream, client, camname, config_params.get_param('diversity', 'ndark', int))
-    else:
-        darkim = None
 
     dmdelay = config_params.get_param('diversity', 'dmdelay', float)
     indidelay = config_params.get_param('diversity', 'indidelay', float)
@@ -63,7 +61,7 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                       indidelay=indidelay,
                                       restore_dm=restore_dm
                                       )
-    else: # stage diversity
+    elif div_type.lower() == 'stage': # stage diversity
         positions = np.asarray(config_params.get_param('diversity', 'values', float)) + config_params.get_param('diversity', 'stage_focus', float)
         imcube = measure_stage_diversity(client,
                                 camstream,
@@ -77,6 +75,9 @@ def take_measurements_from_config(config_params, dm_cmds=None, client=None, dmst
                                 final_position=positions[0],
                                 restore_dm=restore_dm
                                 )
+    elif div_type.lower() == 'camera':
+        raise NotImplementedError('multi-camera diversity not implemented yet!')
+
     print(imcube.shape)
     # clip if needed
     shape = imcube.shape
@@ -187,17 +188,23 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
 
         # loop over DM commands, and take measurements
         curims = []
+        send_cmd = True
         if dm_cmds is None:
             dm_cmds = [np.zeros(dm_shape, dtype=dm_type) + curcmd,]
+            send_cmd = False
         for cmd in dm_cmds:
-            dmstream.write(cmd.astype(dm_type))
-            dmstream.write(cmd.astype(dm_type)) # for good measure
-            cnt0 = camstream.md.cnt0 # grab the current camera frame number
-            if dmdelay is not None:
-                #sleep(dmdelay)
-                newcnt0 = cnt0 + dmdelay # expected camera frame number for this DM command
+
+            if send_cmd:
+                dmstream.write(cmd.astype(dm_type))
+                dmstream.write(cmd.astype(dm_type)) # for good measure
+                cnt0 = camstream.md.cnt0 # grab the current camera frame number
+                if dmdelay is not None:
+                    #sleep(dmdelay)
+                    newcnt0 = cnt0 + dmdelay # expected camera frame number for this DM command
+                else:
+                    newcnt0 = None # don't wait otherwise
             else:
-                newcnt0 = None # don't wait otherwise
+                newcnt0 = None
             imlist = np.asarray(camstream.grab_many(nimages, cnt0_min=newcnt0))
             if improc == 'register':
                 im = np.mean(register_images(imlist - darkim, upsample=10), axis=0)
@@ -206,12 +213,89 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
             curims.append(im)
         allims.append(curims)  
         
-        if restore_dm:
+        if restore_dm and send_cmd:
             dmstream.write(curcmd.astype(dm_type)) # reset between stage moves (minimize creep on ALPAOs)  
         
     # restore
-    if restore_dm:
+    if restore_dm and send_cmd:
         dmstream.write(curcmd)
     if final_position is not None:
         move_stage(client, camstage, final_position, block=False)
+    return np.squeeze(allims)
+
+
+def measure_multicam_stage_diversity(client, camstream1, camstream2, dmstream, camstage1, camstage2, defocus_positions, nimages, final_positions=None, dm_cmds=None, restore_dm=True, dmdelay=None, improc='mean', darkims=None):
+    '''
+    Currently assuming just two cameras (2 diversity measurements)
+
+    TO DO:
+    * add support for multiple dark images
+    * multiple stage focus positions
+    * multiple stage defocus positions
+    * ImageStream.grab_many blocks, so we're technically always getting a measurement from one camera sooner than on the other (would need to thread)
+    * figure out right output shape
+    '''
+   
+    dm_shape = dmstream.grab_latest().shape
+    dm_type = dmstream.buffer.dtype
+    
+    # keep track of channel cmd
+    if restore_dm:
+        curcmd = dmstream.grab_latest()
+    else:
+        curcmd = np.zeros(dm_shape)
+
+    if darkims is None:
+        darkim1 = darkim2 = 0
+
+    # move stages (current)
+    move_stage(client, camstage1, defocus_positions[0], block=True)
+    move_stage(client, camstage2, defocus_positions[1], block=True)
+    sleep(0.1)
+    
+    # loop over DM commands, and take measurements
+    curims1 = []
+    curims2 = []
+    send_cmd = True
+    if dm_cmds is None:
+        dm_cmds = [np.zeros(dm_shape, dtype=dm_type) + curcmd,]
+        send_cmd = False
+    for cmd in dm_cmds:
+
+        if send_cmd:
+            dmstream.write(cmd.astype(dm_type))
+            dmstream.write(cmd.astype(dm_type)) # for good measure
+
+            cnt0_1 = camstream1.md.cnt0 # grab the current camera frame number
+            cnt0_2 = camstream2.md.cnt0
+            if dmdelay is not None:
+                #sleep(dmdelay)
+                newcnt0_1 = cnt0_1 + dmdelay # expected camera frame number for this DM command
+                newcnt0_2 = cnt0_2 + dmdelay
+            else:
+                newcnt0_1 = newcnt0_2 = None # don't wait otherwise
+        else:
+            newcnt0_1 = newcnt0_2 = None # don't wait if no command is sent
+
+        # non-simultaneous! FIX ME
+        imlist1 = np.asarray(camstream1.grab_many(nimages, cnt0_min=newcnt0_1)) 
+        imlist2 = np.asarray(camstream2.grab_many(nimages, cnt0_min=newcnt0_2))
+
+        if improc == 'register':
+            im1 = np.mean(register_images(imlist1 - darkims[0], upsample=10), axis=0)
+            im2 = np.mean(register_images(imlist2 - darkims[1], upsample=10), axis=0)
+        else:
+            im1 = np.mean(imlist1, axis=0) - darkims[0]
+            im2 = np.mean(imlist1, axis=0) - darkims[1]
+        curims1.append(im1)
+        curims2.append(im2)
+
+    allims = np.concatenate([im1, im2], axis=0) # not sure about the correct shape 
+
+    if restore_dm and send_cmd:
+        dmstream.write(curcmd.astype(dm_type)) # reset between stage moves (minimize creep on ALPAOs)  
+    if final_positions is not None:
+        move_stage(client, camstage1, final_positions[0], block=False)
+        move_stage(client, camstage2, final_positions[1], block=False)
+
     return np.squeeze(allims)
