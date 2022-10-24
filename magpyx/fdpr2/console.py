@@ -10,9 +10,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
 
+from ..utils import ImageStream
+
 from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
                     validate_calibration_directory, Configuration, replace_symlink, estimate_response_matrix,
-                    get_magaox_fitting_params, rsync_calibration_directory, update_symlinks_to_latest)
+                    update_symlinks_to_latest, get_defocus_probe_cmds, test_defocus, get_fitting_region,
+                    get_amplitude_mask)
 
 def console_close_loop():
     #argparse
@@ -57,12 +60,6 @@ def console_compute_control_matrix():
 
     validate_calibration_directory(config_params)
 
-    # get param_func
-    calib_func = config_params.get_param('calibration', 'function', str)
-    mname, fname = calib_func.rsplit('.', 1)
-    mod = import_module(mname)
-    param_func = getattr(mod, fname)
-    
     compute_control_matrix(config_params, write=True)
 
 def console_measure_response_matrix():
@@ -156,36 +153,36 @@ def console_estimate_response_matrix():
 
     logger.info(f'Performing estimation for {image_cube.shape} FITS file.')
 
-
-    Iref, Icube, fitmask, tol0, tol1, reg, wreg, probevals, wavelen, scalefactor=1, processes=2, gpus=None
-
     # get all the params
-    probevals = config_params.get_param('diversity', 'probevals', float)
-    wavelen = config_params.get_param('diversity', 'wavelen', float)
-    scalefactor = config_params.get_param('diversity', 'scalefactor', float)
+    probevals = np.asarray(config_params.get_param('diversity', 'probevals', float))
+    wavelen = config_params.get_param('estimation', 'wavelen', float)
+    scalefactor = config_params.get_param('estimation', 'scalefactor', float)
     N = config_params.get_param('estimation', 'N', int)
     nside = config_params.get_param('estimation', 'Nfit', int)
     fitmask, fitslice = get_fitting_region((N,N), nside)
     tol0 = config_params.get_param('estimation', 'tol0', float)
-    tol1 = config_params.get_param('estimation', 'tol0', float)
+    tol1 = config_params.get_param('estimation', 'tol1', float)
     reg = config_params.get_param('estimation', 'reg', float)
     wreg = config_params.get_param('estimation', 'wreg', float)
 
-    estdict = estimate_response_matrix(Iref, image_cube, fitmask, tol0, tol1, reg, wreg, probevals, wavelen,
+    refdict, estdict = estimate_response_matrix(Iref, image_cube[:10], fitmask, tol0, tol1, reg, wreg, probevals, wavelen,
+                                       scalefactor=scalefactor,
                                        processes=config_params.get_param('estimation', 'nproc', int),
                                        gpus=config_params.get_param('estimation', 'gpus', int),)
     
     
     # amplitude thresholding
     amp = np.mean(estdict['amp_est'], axis=0)
-    amp_norm = amp / np.mean(amp[pupil])
     threshold_factor = config_params.get_param('control', 'ampthreshold', float)
-    amp_mask = get_amplitude_mask(amp_norm, threshold_factor)
+    amp_mask = get_amplitude_mask(amp, threshold_factor)
+    amp_norm = amp / np.mean(amp[amp_mask])
 
     phase_est = np.asarray(estdict['phase_est']) * amp_mask
     amp_est = np.asarray(estdict['amp_est']) * amp_mask
 
-    estrespM = np.concatenate([amp_est, phase_est], axis=-1)
+    slicezyx = (slice(None),*fitslice)
+    #estrespM = np.concatenate([amp_est[slicezyx], phase_est[slicezyx]], axis=-1)
+    estrespM = phase_est[slicezyx]
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
     outname = path.join(calib_path, 'estrespM', f'estrespM_{date}.fits')
@@ -196,6 +193,23 @@ def console_estimate_response_matrix():
     # replace symlink
     sympath_out = path.join(calib_path, 'estrespM.fits')
     replace_symlink(sympath_out, outname)
+
+def console_test_defocus():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('config', type=str, help='Name of the configuration file to use (don\'t include the path or extension).')
+    args = parser.parse_args()
+
+    # get parameters from config file
+    config_params = Configuration(args.config)
+
+    with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
+        dm_mask = f[0].data
+
+    probevals = np.asarray(config_params.get_param('diversity', 'probevals', float))
+    probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+    test_defocus(dmdivstream, probe_cmds)
 
 def console_rsync_calibration_directory():
 

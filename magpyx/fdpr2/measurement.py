@@ -24,15 +24,22 @@ def get_ref_measurement(camstream, navg=1, dmdelay=2):
 
 def get_response_measurements(camstream, dmstream, dmdivstream, divcmds, modecmds, navg=1, dmdelay=2):
 
+    cur0 = dmstream.grab_latest()
+    cur1 = dmdivstream.grab_latest()
+
     meas = []
-    for cmd in divcmds:
+    for cmd in modecmds:
 
-        # write diversity cmd
-        dmdivstream.write(cmd)
+        # write modal cmd
+        dmstream.write(cmd)
 
-        # collect interaction measurements for that diversity state
-        imcube = get_probed_measurements(camstream, dmstream, modecmds, navg=navg, dmdelay=dmdelay)
+        # collect diversity measurements for that mode
+        imcube = get_probed_measurements(camstream, dmdivstream, divcmds, navg=navg, dmdelay=dmdelay)
 
         meas.append(imcube)
 
-    return np.asarray(meas).swapaxes(0,1) # nmodes x ndiv x xpix x ypix
+    # restore
+    dmstream.write(cur0)
+    dmdivstream.write(cur1)
+
+    return np.asarray(meas)#.swapaxes(0,1) # nmodes x ndiv x xpix x ypix
