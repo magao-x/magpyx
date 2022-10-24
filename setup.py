@@ -66,7 +66,8 @@ setup(
                             'fdpr2_measure_response=magpyx.fdpr2.console:console_measure_response_matrix',
                             'fdpr2_compute_control_matrix=magpyx.fdpr2.console:console_compute_control_matrix',
                             'fdpr2_close_loop=magpyx.fdpr2.console:console_close_loop',
-                            'fdpr2_oneshot=magpyx.fdpr2.console:console_estimate_oneshot',]
+                            'fdpr2_oneshot=magpyx.fdpr2.console:console_estimate_oneshot',
+                            'fdpr2_test_defocus=magpyx.fdpr2.console:console_test_defocus',]
     },
     
     # List run-time dependencies here.  These will be installed by pip when
