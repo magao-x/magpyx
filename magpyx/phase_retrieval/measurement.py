@@ -254,8 +254,6 @@ def measure_multicam_stage_diversity(client, camstream1, camstream2, dmstream, c
     sleep(0.1)
     
     # loop over DM commands, and take measurements
-    curims1 = []
-    curims2 = []
     send_cmd = True
     if dm_cmds is None:
         dm_cmds = [np.zeros(dm_shape, dtype=dm_type) + curcmd,]
@@ -265,32 +263,28 @@ def measure_multicam_stage_diversity(client, camstream1, camstream2, dmstream, c
         if send_cmd:
             dmstream.write(cmd.astype(dm_type))
             dmstream.write(cmd.astype(dm_type)) # for good measure
-
-            cnt0_1 = camstream1.md.cnt0 # grab the current camera frame number
-            cnt0_2 = camstream2.md.cnt0
-            if dmdelay is not None:
-                #sleep(dmdelay)
-                newcnt0_1 = cnt0_1 + dmdelay # expected camera frame number for this DM command
-                newcnt0_2 = cnt0_2 + dmdelay
-            else:
-                newcnt0_1 = newcnt0_2 = None # don't wait otherwise
+            if dmdelay is None:
+                dmdelay = 0
         else:
-            newcnt0_1 = newcnt0_2 = None # don't wait if no command is sent
+            dmdelay = 0 # don't wait if no command is sent
 
         # non-simultaneous! FIX ME
-        imlist1 = np.asarray(camstream1.grab_many(nimages, cnt0_min=newcnt0_1)) 
-        imlist2 = np.asarray(camstream2.grab_many(nimages, cnt0_min=newcnt0_2))
+        #imlist1 = np.asarray(camstream1.grab_many(nimages, cnt0_min=newcnt0_1)) 
+        #imlist2 = np.asarray(camstream2.grab_many(nimages, cnt0_min=newcnt0_2))
 
-        if improc == 'register':
-            im1 = np.mean(register_images(imlist1 - darkims[0], upsample=10), axis=0)
-            im2 = np.mean(register_images(imlist2 - darkims[1], upsample=10), axis=0)
-        else:
-            im1 = np.mean(imlist1, axis=0) - darkims[0]
-            im2 = np.mean(imlist1, axis=0) - darkims[1]
-        curims1.append(im1)
-        curims2.append(im2)
+        # quasi-simultaneous image acquisition
+        camstream1.grab_asynchronous('grab_after', args=(nimages, dmdelay))
+        camstream2.grab_asynchronous('grab_after', args=(nimages, dmdelay))
 
-    allims = np.concatenate([im1, im2], axis=0) # not sure about the correct shape 
+    sleep(1) # need some way to guarantee all images are in the queue
+    imlistlist1 = camstream1.get_queued_images()
+    imlistlist2 = camstream1.get_queued_images()
+
+    # currently doesn't support registration (just avging)
+    imlist1 = np.mean(imlistlist1, axis=-1) - darkims[0] # not sure about axis
+    imlist2 = np.mean(imlistlist2, axis=-1) - darkims[1]
+
+    allims = np.concatenate([imlist1, imlist2], axis=0) # not sure about the correct shape 
 
     if restore_dm and send_cmd:
         dmstream.write(curcmd.astype(dm_type)) # reset between stage moves (minimize creep on ALPAOs)  

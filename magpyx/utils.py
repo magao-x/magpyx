@@ -197,7 +197,7 @@ class AsynchronousImageStream(mp.Process):
     >>> nimages = 10
     >>> nwait = 2
     >>> stream.grab_asynchronous(stream.grab_after, (nimages, nwait)) # grab some images (call as many times as you want)
-    >>> images = stream.get_queued_images(wait=True) # get queued images
+    >>> images = stream.get_queued_images() # get queued images
     >>> stream.stop() # close the thread, queues, and shmim
     '''
     
