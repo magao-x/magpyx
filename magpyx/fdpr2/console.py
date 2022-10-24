@@ -165,7 +165,7 @@ def console_estimate_response_matrix():
     reg = config_params.get_param('estimation', 'reg', float)
     wreg = config_params.get_param('estimation', 'wreg', float)
 
-    refdict, estdict = estimate_response_matrix(Iref, image_cube[:10], fitmask, tol0, tol1, reg, wreg, probevals, wavelen,
+    refdict, estdict = estimate_response_matrix(Iref, image_cube, fitmask, tol0, tol1, reg, wreg, probevals, wavelen,
                                        scalefactor=scalefactor,
                                        processes=config_params.get_param('estimation', 'nproc', int),
                                        gpus=config_params.get_param('estimation', 'gpus', int),)
