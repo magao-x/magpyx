@@ -115,7 +115,7 @@ def map_index2d_to_index1d_ALPAO(index2d):
 
 def mask_2K():
     mask = np.zeros((50,50), dtype=bool)
-    circmask = draw.circle(24.5,24.5,25.6,(50,50))
+    circmask = draw.disk((24.5,24.5),25.6,shape=(50,50))
     mask[circmask] = 1
     return mask
 
