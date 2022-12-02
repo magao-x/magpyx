@@ -654,7 +654,7 @@ DEFAULT_STEPS = [
 # copy DEFAULT_STEPS but disable (x,y) fitting
 STEPS_NOXY = deepcopy(DEFAULT_STEPS)
 STEPS_NOXY.pop(0)
-STEPS_NOXY.pop(0)
+#STEPS_NOXY.pop(0)
 for step in STEPS_NOXY:
     step['xk'] =  step['yk'] = step['zk'] = False
 
