@@ -4,6 +4,22 @@ from datetime import datetime
 import numpy as np
 from astropy.io import fits
 
+def create_basis_from_footprint(dm_footprint, dm_mask, nmodes=36):
+    
+    zbasis = arbitrary_basis(dm_footprint, nterms=nmodes, outside=0)
+    
+    # find actuators outside the beam footprint
+    footprint = zbasis[0] != 0
+    outside = dm_mask & ~footprint
+    outyx = np.dstack(np.where(outside))[0]
+
+    # interpolate from nearest neighbors
+    for y, x in outyx:
+        yneighbor, xneighbor = find_nearest((y, x), footprint, num=3)
+        zbasis[:, y, x] = zbasis[:, yneighbor, xneighbor]
+        
+    return zbasis[1:]
+
 def projected_basis(nterms, angle, fill_fraction, actuator_mask):
     '''
     Return a set of Zernike modes stretched such that
