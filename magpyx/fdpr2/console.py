@@ -5,6 +5,8 @@ from datetime import datetime
 from astropy.io import fits
 import numpy as np
 
+from importlib import import_module
+
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
@@ -14,7 +16,7 @@ from ..utils import ImageStream
 
 from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
                     validate_calibration_directory, Configuration, replace_symlink, estimate_response_matrix,
-                    update_symlinks_to_latest, get_defocus_probe_cmds, test_defocus, get_fitting_region,
+                    update_symlinks_to_latest, get_defocus_probe_cmds, get_defocus_probe_cmds_magaox, test_defocus, get_fitting_region,
                     get_amplitude_mask)
 
 def console_close_loop():
@@ -207,7 +209,14 @@ def console_test_defocus():
         dm_mask = f[0].data
 
     probevals = np.asarray(config_params.get_param('diversity', 'probevals', float))
-    probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    #probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    # get diversity probes func
+    calib_func = config_params.get_param('estimation', 'div_func', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    probe_func = getattr(mod, fname)
+    probe_cmds = probe_func(dm_mask, probevals, config_params)
+
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
     test_defocus(dmdivstream, probe_cmds)
 

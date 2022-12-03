@@ -20,6 +20,9 @@ from ..imutils import rms, write_to_fits, remove_plane, center_of_mass, shift, r
 from .estimation import multiprocess_phase_retrieval, run_phase_retrieval
 from .measurement import get_probed_measurements, get_ref_measurement, get_response_measurements
 
+from importlib import import_module
+
+
 SUBDIRS = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
            'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
 
@@ -50,12 +53,22 @@ def get_defocus_probes(fitmask, probevals, wavelen, scalefactor=1):
     phasevals = cmd_rms_to_phase_rms(probevals, wavelen) * scalefactor
     return np.exp(1j*zmodes[-1]*phasevals[:,None,None])
 
-def get_defocus_probe_cmds(dm_mask, probevals):
+def get_defocus_probe_cmds(dm_mask, probevals, config_params):
     zmodes = zernike.arbitrary_basis(dm_mask, nterms=4, outside=0) 
     return probevals[:,None,None] * zmodes[-1]
 
-def get_centroid(camstream, navg=1, dmdelay=2):
+def get_defocus_probe_cmds_magaox(dm_mask, probevals, config_params):
+    # read in zbasis (need config path)
+    zpath = config_params.get_param('estimation', 'div_path', str)
+    with fits.open(zpath) as f:
+        zmodes = f[0].data
+    # pull out defocus mode and scale
+    return probevals[:,None,None] * zmodes[2]
+
+def get_centroid(camstream, navg=1, dmdelay=2, dark=None):
     imref = get_ref_measurement(camstream, navg, dmdelay)
+    if dark is not None:
+        imref -= dark
     refmask = imref > imref.max() * 0.5
     com_yx = center_of_mass(imref * refmask) # reference
     return com_yx
@@ -109,13 +122,15 @@ def test_defocus(dmstream, cmds):
 
 # ----- CLOSED LOOP ------
 
-def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2):
+def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2, dark=None):
 
     # get centroid from potentially saturated PSF (no defocus)
     com_yx = get_centroid(camstream, navg=navg, dmdelay=dmdelay)
 
     # measure defocused PSFS
     psfs = get_probed_measurements(camstream, dmstream, probe_cmds, navg=navg, dmdelay=dmdelay)
+    if dark is not None:
+        psfs -= dark
 
     # translate to calculated centroid
     psfs_cen = translate_cube_to_centroid(psfs, com_yx)
@@ -140,6 +155,8 @@ def close_loop(config_params):
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
     camname = config_params.get_param('camera', 'name', str)
     camstream = ImageStream(camname)
+    darkstream = ImageStream(config_params.get_param('diversity', 'dark_shmim', str))
+    dark = darkstream.grab_latest()
 
     # get measurement and estimation parameters
     navg = config_params.get_param('diversity', 'navg', int)
@@ -152,6 +169,7 @@ def close_loop(config_params):
     tol = config_params.get_param('estimation', 'tol0', float)
     reg = config_params.get_param('estimation', 'reg', float)
     wreg = config_params.get_param('estimation', 'wreg', float)
+    
 
     fitmask, fitslice = get_fitting_region((N,N), nside)
     Eprobes = get_defocus_probes(fitmask, probevals, wavelen, scalefactor=scalefactor)
@@ -162,7 +180,12 @@ def close_loop(config_params):
     with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
         dm_mask = f[0].data
 
-    probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    # get diversity probes func
+    calib_func = config_params.get_param('estimation', 'div_func', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    probe_func = getattr(mod, fname)
+    probe_cmds = probe_func(dm_mask, probevals, config_params)
 
     # get other relevant parameters for closed loop
     niter = config_params.get_param('control', 'niter', int)
@@ -199,6 +222,7 @@ def close_loop(config_params):
         'wreg' : wreg,
         'navg' : navg,
         'dmdelay' : dmdelay,
+        'dark' : dark
     }
 
     wfsfunc = measure_and_estimate_phase_vector
@@ -301,13 +325,21 @@ def measure_response_matrix(config_params):
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
     dmstream = ImageStream(config_params.get_param('diversity', 'dmchannel', str))
     camstream = ImageStream(config_params.get_param('camera', 'name', str))
+    darkstream = ImageStream(config_params.get_param('diversity', 'dark_shmim', str))
+    dark = darkstream.grab_latest()
 
     with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
         dm_map = f[0].data
     with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
         dm_mask = f[0].data
 
-    probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    #probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    # get diversity probes func
+    calib_func = config_params.get_param('estimation', 'div_func', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    probe_func = getattr(mod, fname)
+    probe_cmds = probe_func(dm_mask, probevals, config_params)
 
     # take reference measurements first (1. in-focus image for centroiding, 2. defocus but no DM command)
     camstream = ImageStream(config_params.get_param('camera', 'name', str))
@@ -317,6 +349,7 @@ def measure_response_matrix(config_params):
     # take defocused images w/ no modal probe
     logger.info('Taking diversity-only (no modal commands) measurements for estimation')
     Imeasref = get_probed_measurements(camstream, dmdivstream, probe_cmds, navg=navg_ref, dmdelay=dmdelay)
+    Imeasref -= dark
 
     # get the hadamard modes
     nact = config_params.get_param('interaction', 'nact', int)
@@ -333,6 +366,7 @@ def measure_response_matrix(config_params):
     logger.info(f'Got a {hmodes.shape} Hadmard matrix and constructed a {dm_cmds.shape} DM command sequence.')
     logger.info(f'Taking measurements for interaction matrix...')
     imcube = get_response_measurements(camstream, dmstream, dmdivstream, probe_cmds, dm_cmds, navg=navg, dmdelay=dmdelay)
+    imcube -= dark
 
     # centroid and stack all measurements
     Imeasref_cen = translate_cube_to_centroid(Imeasref, com_yx) - np.median(Imeasref)
@@ -367,6 +401,8 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
     #dmstream = ImageStream(config_params.get_param('diversity', 'dmchannel', str))
     camname = config_params.get_param('camera', 'name', str)
     camstream = ImageStream(camname)
+    darkstream = ImageStream(config_params.get_param('diversity', 'dark_shmim', str))
+    dark = darkstream.grab_latest()
 
     # get measurement and estimation parameters
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
@@ -390,13 +426,20 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
     with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
         dm_mask = f[0].data
 
-    probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    #probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
+    # get diversity probes func
+    calib_func = config_params.get_param('estimation', 'div_func', str)
+    mname, fname = calib_func.rsplit('.', 1)
+    mod = import_module(mname)
+    probe_func = getattr(mod, fname)
+    probe_cmds = probe_func(dm_mask, probevals, config_params)
 
     # take reference image (no defocus) for centroid
-    com_yx = get_centroid(camstream, navg=navg, dmdelay=dmdelay)
+    com_yx = get_centroid(camstream, navg=navg, dmdelay=dmdelay, dark=dark)
 
     # take defocused images
     Imeas = get_probed_measurements(camstream, dmdivstream, probe_cmds, navg=navg, dmdelay=dmdelay)
+    Imeas -= dark
 
     # shift to centroid
     Imeas_cen = translate_cube_to_centroid(Imeas, com_yx) - np.median(Imeas)

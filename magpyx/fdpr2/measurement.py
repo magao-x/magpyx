@@ -10,6 +10,7 @@ def get_probed_measurements(camstream, dmstream, probe_cmds, navg=1, dmdelay=2):
         dmstream.write(probe)
         cnt0 = camstream.md.cnt0
         im = np.mean(camstream.grab_many(navg, cnt0_min=cnt0+dmdelay),axis=0)
+        #im -= np.median(im)
         meas.append(im)
         
     dmstream.write(curcmd) # restore DM
@@ -19,6 +20,7 @@ def get_probed_measurements(camstream, dmstream, probe_cmds, navg=1, dmdelay=2):
 def get_ref_measurement(camstream, navg=1, dmdelay=2):
     cnt0 = camstream.md.cnt0
     im = np.mean(camstream.grab_many(navg, cnt0_min=cnt0+dmdelay),axis=0)
+    #im -= np.median(im)
     return im
 
 
