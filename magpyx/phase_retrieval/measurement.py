@@ -183,6 +183,7 @@ def measure_stage_diversity(client, camstream, dmstream, camstage, defocus_posit
         print(f'Moving to focus position {j+1}')
                                 
         # block until stage is in position
+        sleep(0.5)
         move_stage(client, camstage, pos, block=True)
         sleep(0.1)
 
