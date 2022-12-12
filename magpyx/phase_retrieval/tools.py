@@ -72,13 +72,13 @@ def get_magaox_fitting_params(camera='camsci2', wfilter='Halpha', mask='bump_mas
     }
     # pupil rotation
     pupilrotdict = {
-        'camsci1' : 53.5,
-        'camsci2' : 53.5,
+        'camsci1' : 53.5,#53.5,
+        'camsci2' : 53.5, #53.5,
     }
     # pupil parity
     pupilparitydict = {
-        'camsci1' : (slice(None,None,-1),slice(None,None,-1)),
-        'camsci2' : (slice(None,None,-1),slice(None,None,-1))
+        'camsci1' : (slice(None,None,-1),slice(None,None,1)),
+        'camsci2' : (slice(None,None,-1),slice(None,None,1))
     }
     
     #----------
