@@ -75,7 +75,7 @@ def remove_modes_from_if(ifcube, modes, wfsmask):
 
     return np.asarray([remove_zernikes(im, modes, wfsmask) for im in ifcube])
 
-def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, regtype='truncate', treg='1e-16', deltas=False, remove_modes=None):
+def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, dm_mask, wfsthresh=0.5, dmthresh=0.5, ninterp=2, nmodes=None, regtype='truncate', treg='1e-16', deltas=False, svd_if=True, remove_modes=None):
     '''
     Given a measurement cube of WFS measurements of +/- hadamard modes with amplitude hval,
     return the reconstructed IF matrix, DMmodes, WFSmodes, DM and WFS maps/masks, and the control/reconstructor matrix
@@ -98,21 +98,34 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     wfs_ctrl_map, wfs_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, threshold=wfsthresh)
     dm_ctrl_map, dm_ctrl_mask = get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=dmthresh)
 
-    # reduce ifcube to only include pixels in wfs_ctrl_mask
-    ifcube_active = ifcube[:,wfs_ctrl_mask]
-    ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean
-
-    # get SVD
-    wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
+    if svd_if:
+        # reduce ifcube to only include pixels in wfs_ctrl_mask
+        ifcube_active = ifcube[:,wfs_ctrl_mask]
+        ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean
+        # get SVD
+        wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
+    else:
+        # SVD the direct measurements instead of the reconstructed IF cube
+        # (this might only work if deltas=True)
+        hmeas_active = hmeas[:,wfs_ctrl_mask] / hval / 2.0
+        #hmeas_active -= np.mean(hmeas_active, axis=0)
+        wfsmodes, singvals, dmmodes = get_svd_from_ifcube(hmeas_active)
+        ifcube_active = None
 
     #print(ifcube_active.shape, wfsmodes.shape, singvals.shape, dmmodes.shape)
     #return wfs_ctrl_map, wfs_ctrl_mask, dm_ctrl_map, dm_ctrl_mask, ifcube, wfsmodes, singvals, dmmodes
 
-    # interpolate DM modes
-    dmmodes_interp = interpolate_dm_modes(dmmodes, dm_ctrl_mask, dm_map, dm_mask, n=ninterp)
+    # interpolate DM modes (should this actually happen after computing the control matrix?)
+    if ninterp > 0:
+        dmmodes_interp = interpolate_dm_modes(dmmodes, dm_ctrl_mask, dm_map, dm_mask, n=ninterp)
+    else:
+        dmmodes_interp = dmmodes
 
     # get control matrix
     ctrl = get_control_matrix(dmmodes_interp, wfsmodes, singvals, nmodes=nmodes, regtype=regtype, treg=treg)
+
+    if not svd_if:
+        ctrl = hmodes[:nact].dot(ctrl)
 
     return {
         'ifmat' : ifcube_active,
@@ -190,7 +203,8 @@ def get_ifcube_from_hmeas(hmeas, hmodes, hval, nact=None, deltas=False):
     hcube_norm -= np.mean(hcube_norm, axis=0)
 
     # inverse should just be H^T / n or something, so this is very lazy
-    hinv = np.linalg.pinv(hmodes[:,:nact])
+    #hinv = np.linalg.pinv(hmodes[:,:nact])
+    hinv = hmodes[:nact] / len(hmodes)
 
     return np.dot(hinv, hcube_norm.reshape((shape[0],-1))).reshape((nact,*shape_wfs))
 
