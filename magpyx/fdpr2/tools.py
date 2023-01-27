@@ -155,8 +155,12 @@ def close_loop(config_params):
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
     camname = config_params.get_param('camera', 'name', str)
     camstream = ImageStream(camname)
-    darkstream = ImageStream(config_params.get_param('diversity', 'dark_shmim', str))
-    dark = darkstream.grab_latest()
+    dark_name = config_params.get_param('diversity', 'dark_shmim', str)
+    if dark_name != 'None':
+        darkstream = ImageStream(dark_name)
+        dark = darkstream.grab_latest()
+    else:
+        dark = 0
 
     # get measurement and estimation parameters
     navg = config_params.get_param('diversity', 'navg', int)
@@ -325,8 +329,12 @@ def measure_response_matrix(config_params):
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
     dmstream = ImageStream(config_params.get_param('diversity', 'dmchannel', str))
     camstream = ImageStream(config_params.get_param('camera', 'name', str))
-    darkstream = ImageStream(config_params.get_param('diversity', 'dark_shmim', str))
-    dark = darkstream.grab_latest()
+    dark_name = config_params.get_param('diversity', 'dark_shmim', str)
+    if dark_name != 'None':
+        darkstream = ImageStream(dark_name)
+        dark = darkstream.grab_latest()
+    else:
+        dark = 0
 
     with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
         dm_map = f[0].data
@@ -401,8 +409,12 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
     #dmstream = ImageStream(config_params.get_param('diversity', 'dmchannel', str))
     camname = config_params.get_param('camera', 'name', str)
     camstream = ImageStream(camname)
-    darkstream = ImageStream(config_params.get_param('diversity', 'dark_shmim', str))
-    dark = darkstream.grab_latest()
+    dark_name = config_params.get_param('diversity', 'dark_shmim', str)
+    if dark_name != 'None':
+        darkstream = ImageStream(dark_name)
+        dark = darkstream.grab_latest()
+    else:
+        dark = 0
 
     # get measurement and estimation parameters
     dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))

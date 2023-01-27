@@ -84,7 +84,7 @@ def get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil):
     
     return gradA, gradphi
 
-def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap):
+def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap, modes):
     
     xp = get_array_module(Eprobes)
     
@@ -100,8 +100,12 @@ def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap):
     #Eab = xp.zeros(mask.shape, dtype=complex)
     A = xp.zeros(mask.shape)
     phi = xp.zeros(mask.shape)
-    A[mask] = params_amp
-    phi[mask] = params_phase
+    if modes is None:
+        A[mask] = params_amp
+        phi[mask] = params_phase
+    else:
+        A = xp.sum(modes * params_amp[:,None,None], axis=0)
+        phi = xp.sum(modes * params_phase[:,None,None], axis=0)
     
     # probe
     #Eprobes = np.exp(1j*param_a*phiprobes)
@@ -137,8 +141,13 @@ def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap):
     # grada,
     gradA, gradphi = get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil)#[mask]
     # split into real, imaginary components
-    grad_Aphi = xp.concatenate([#cp.asarray([grada,]),
-                                gradA[mask],gradphi[mask]], axis=0) + 2 * lambdap * params
+    if modes is None:
+        grad_Aphi = xp.concatenate([#cp.asarray([grada,]),
+                                    gradA[mask],gradphi[mask]], axis=0) + 2 * lambdap * params
+    else:
+        gradAmodal = xp.sum(gradA*modes,axis=(-2,-1))
+        gradphimodal = xp.sum(gradphi*modes, axis=(-2,-1))
+        grad_Aphi = xp.concatenate([gradAmodal, gradphimodal], axis=0) + 2 * lambdap * params
     
     # back to CPU
     if xp is cp:
@@ -167,17 +176,25 @@ def get_han2d_sq(N, fraction=1./np.sqrt(2), normalize=False):
     window[np.abs(x) > rmax] = 0
     return np.outer(window, window)
 
-def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True):
+def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True, modes=None):
 
     # centroiding here? probably not.
-
-    N = np.count_nonzero(fitmask)
+    if modes is None:
+        N = np.count_nonzero(fitmask)
+    else:
+        N = len(modes)
 
     # initialize pixel values if not given
     if init_params is None:
-        fitsmooth = gauss_convolve(binary_erosion(fitmask, iterations=3), 3)
-        init_params = np.concatenate([fitsmooth[fitmask],
-                                      fitsmooth[fitmask]*0], axis=0)
+        if modes is None:
+            fitsmooth = gauss_convolve(binary_erosion(fitmask, iterations=3), 3)
+            init_params = np.concatenate([fitsmooth[fitmask],
+                                          fitsmooth[fitmask]*0], axis=0)
+        else:
+            amp0 = np.zeros(len(modes))
+            amp0[0] = 1
+            ph0 = np.zeros(len(modes))
+            init_params = np.concatenate([amp0, ph0], axis=0)
     # compute weights?
     weights = 1/(Imeas + wreg) * get_han2d_sq(Imeas[0].shape[0], fraction=0.7)
     weights /= np.max(weights,axis=(-2,-1))[:,None,None]
@@ -194,10 +211,14 @@ def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=Non
     Imeas = cp.array(Imeas, dtype=cp.float64)
     weights = cp.array(weights, dtype=cp.float64)
     fitmask_cp = cp.array(fitmask)
+    if modes is not None:
+        modes_cp = cp.array(modes)
+    else:
+        modes_cp = None
 
     errfunc = get_sqerr_grad
     fitdict = minimize(errfunc, init_params, args=(fitmask_cp, fitmask_cp,
-                        Eprobes, weights, Imeas, N, reg),
+                        Eprobes, weights, Imeas, N, reg, modes_cp),
                         method='L-BFGS-B', jac=True, bounds=bounds,
                         tol=tol, options={'ftol' : tol, 'gtol' : tol, 'maxls' : 100})
 
@@ -205,8 +226,12 @@ def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=Non
     phase_est = np.zeros(fitmask.shape)
     amp_est = np.zeros(fitmask.shape)
 
-    phase_est[fitmask] = fitdict['x'][N:]
-    amp_est[fitmask] = fitdict['x'][:N]
+    if modes is None:
+        phase_est[fitmask] = fitdict['x'][N:]
+        amp_est[fitmask] = fitdict['x'][:N]
+    else:
+        phase_est = np.sum(fitdict['x'][N:,None,None] * modes, axis=0)
+        amp_est = np.sum(fitdict['x'][:N,None,None] * modes, axis=0)
 
     return {
         'phase_est' : phase_est,
