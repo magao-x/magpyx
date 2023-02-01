@@ -13,14 +13,18 @@ def get_indi_client(port=7624):
     client.start()
     return client
 
-def set_camera_roi(client, device, roi_x, roi_y, roi_h, roi_w):
+def set_camera_roi(client, device, roi_x, roi_y, roi_h, roi_w, bin_x=None, bin_y=None):
     # update roi parameters
     client.wait_for_properties([f'{device}.roi_region_x', f'{device}.roi_region_y', f'{device}.roi_region_h' ,f'{device}.roi_region_w',
-                                f'{device}.roi_set'])
+                                f'{device}.roi_region_bin_x', f'{device}.roi_region_bin_y', f'{device}.roi_set'])
     client[f'{device}.roi_region_x.target'] = roi_x
     client[f'{device}.roi_region_y.target'] = roi_y
     client[f'{device}.roi_region_h.target'] = roi_h
     client[f'{device}.roi_region_w.target'] = roi_w
+    if bin_x is not None:
+        client[f'{device}.roi_region_bin_x.target'] = bin_x
+    if bin_y is not None:
+        client[f'{device}.roi_region_bin_y.target'] = bin_y
     sleep(2.0)
     client[f'{device}.roi_set.request'] = SwitchState.ON
     sleep(2.0)
