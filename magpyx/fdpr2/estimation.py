@@ -2,6 +2,10 @@ from functools import partial
 import multiprocessing as mp
 from time import sleep
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('fdpr2')
+
 import numpy as np
 try:
     import cupy as cp
@@ -13,10 +17,6 @@ from scipy.optimize import minimize
 from scipy.ndimage import binary_erosion
 
 from ..imutils import gauss_convolve, fft2_shiftnorm, ifft2_shiftnorm, center_of_mass, shift
-
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('fdpr2')
 
 def get_array_module(arr):
     if cp is not None:
