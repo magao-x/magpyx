@@ -124,8 +124,11 @@ def test_defocus(dmstream, cmds):
 
 def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2, dark=None, config_params=None):
 
+
+    if dark is None:
+        dark = 0
     # get centroid from potentially saturated PSF (no defocus)
-    com_yx = get_centroid(camstream, navg=navg, dmdelay=dmdelay)
+    com_yx = get_centroid(camstream, navg=navg, dmdelay=dmdelay, dark=dark)
 
     # measure defocused PSFS
     psfs = get_probed_measurements(camstream, dmstream, probe_cmds, navg=navg, dmdelay=dmdelay)
@@ -413,12 +416,15 @@ def estimate_response_matrix(Iref, Icube, fitmask, tol0, tol1, reg, wreg, probev
     # turn list of dictionaries into dictionary of lists
     return outdict0, {k: [cdict[k] for cdict in rlist] for k in rlist[0]}
 
-def estimate_oneshot(config_params, update_shmim=True, write_out=False):
+def estimate_oneshot(config_params, update_shmim=True, write_out=False, skip_estimation=False, camstream_in=None, dmdivstream_in=None, dm_map=None, dm_mask=None):
 
     # open shmims
     #dmstream = ImageStream(config_params.get_param('diversity', 'dmchannel', str))
     camname = config_params.get_param('camera', 'name', str)
-    camstream = ImageStream(camname)
+    if camstream_in is None:
+        camstream = ImageStream(camname)
+    else:
+        camstream = camstream_in
     dark_name = config_params.get_param('diversity', 'dark_shmim', str)
     if dark_name != 'None':
         darkstream = ImageStream(dark_name)
@@ -427,7 +433,10 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
         dark = 0
 
     # get measurement and estimation parameters
-    dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+    if dmdivstream_in is None:
+        dmdivstream = ImageStream(config_params.get_param('diversity', 'dmdivchannel', str))
+    else:
+        dmdivstream = dmdivstream_in
     navg = config_params.get_param('diversity', 'navg_ref', int)
     dmdelay = config_params.get_param('diversity', 'dmdelay', int)
     probevals = np.asarray(config_params.get_param('diversity', 'probevals', float))
@@ -438,15 +447,20 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
     tol = config_params.get_param('estimation', 'tol0', float)
     reg = config_params.get_param('estimation', 'reg', float)
     wreg = config_params.get_param('estimation', 'wreg', float)
+    modes = config_params.get_param('estimation', 'modes', str)
+    if modes == 'None':
+        modes = None
 
     fitmask, fitslice = get_fitting_region((N,N), nside)
     Eprobes = get_defocus_probes(fitmask, probevals, wavelen, scalefactor=scalefactor)
 
     # dm actuator mapping
-    with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
-        dm_map = f[0].data
-    with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
-        dm_mask = f[0].data
+    if dm_map is None:
+        with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
+            dm_map = f[0].data
+    if dm_mask is None:
+        with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
+            dm_mask = f[0].data
 
     #probe_cmds = get_defocus_probe_cmds(dm_mask, probevals)
     # get diversity probes func
@@ -469,40 +483,48 @@ def estimate_oneshot(config_params, update_shmim=True, write_out=False):
     #return Imeas_cen, fitmask, tol, reg, wreg, Eprobes
 
     # run estimation
-    fitdict = run_phase_retrieval(Imeas_cen, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True)
-    #return fitdict
+    if not skip_estimation:
+        fitdict = run_phase_retrieval(Imeas_cen, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True, modes=modes)
 
-    # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
-    amp = fitdict['amp_est']
+        #return fitdict
 
-    # threshold phase based on amplitude? (reject phase values where amplitude is < some threshold)
-    threshold_factor = config_params.get_param('control', 'ampthreshold', float)
-    amp_mask = get_amplitude_mask(amp, threshold_factor)
-    amp_norm = amp / np.mean(amp[amp_mask])
+        # report (maybe tell the user RMS, Strehl, etc. and tell them what shmims/files are updated)
+        amp = fitdict['amp_est']
 
-    #if shmim_mask is not None:
-    #    pupil = pupil * shmim_mask # what is this???
+        # threshold phase based on amplitude? (reject phase values where amplitude is < some threshold)
+        threshold_factor = config_params.get_param('control', 'ampthreshold', float)
+        amp_mask = get_amplitude_mask(amp, threshold_factor)
+        amp_norm = amp / np.mean(amp[amp_mask])
 
-    fitdict['phase_est'] *= amp_mask
-    phase = remove_plane(fitdict['phase_est'], amp_mask) * amp_mask
+        #if shmim_mask is not None:
+        #    pupil = pupil * shmim_mask # what is this???
 
-    phase_rms = np.std(phase[amp_mask])#rms(phase, pupil)
-    amp_rms = np.std(amp_norm[amp_mask])#rms(amp_norm, pupil)
-    amp_lnrms = np.std(np.log(amp_norm)[amp_mask])#rms(np.log(amp_norm), pupil)
-    strehl, strehl_phase, strehl_amp = get_strehl(phase, amp_norm, amp_mask)
-    #strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
+        fitdict['phase_est'] *= amp_mask
+        phase = remove_plane(fitdict['phase_est'], amp_mask) * amp_mask
 
-    logger.info(f'Estimated phase RMS: {phase_rms:.3} (rad)')
-    logger.info(f'Estimated amplitude RMS: {amp_rms*100:.3} (%)')
-    logger.info(f'Estimated Strehl: {strehl:.2f} ({strehl_phase:.2f} phase-only and {strehl_amp:.2f} amplitude-only)')
+        phase_rms = np.std(phase[amp_mask])#rms(phase, pupil)
+        amp_rms = np.std(amp_norm[amp_mask])#rms(amp_norm, pupil)
+        amp_lnrms = np.std(np.log(amp_norm)[amp_mask])#rms(np.log(amp_norm), pupil)
+        strehl, strehl_phase, strehl_amp = get_strehl(phase, amp_norm, amp_mask)
+        #strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
 
-    dmdivstream.close()
-    camstream.close()
+        logger.info(f'Estimated phase RMS: {phase_rms:.3} (rad)')
+        logger.info(f'Estimated amplitude RMS: {amp_rms*100:.3} (%)')
+        logger.info(f'Estimated Strehl: {strehl:.2f} ({strehl_phase:.2f} phase-only and {strehl_amp:.2f} amplitude-only)')
 
-    if update_shmim:
-        update_estimate_shmims(phase * amp_mask, amp, config_params)
+        if update_shmim:
+            update_estimate_shmims(phase * amp_mask, amp, config_params)
 
-    return fitdict
+    if dmdivstream_in is None:
+        dmdivstream.close()
+    if camstream_in is None:
+        camstream.close()
+    #del camstream, dmdivstream
+
+    if skip_estimation:
+        return Imeas_cen
+    else:
+        return fitdict, Imeas_cen
 
 def update_estimate_shmims(phase, amp, config_params):
 
