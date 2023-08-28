@@ -136,7 +136,7 @@ def test_defocus(dmstream, cmds):
 
 # ----- CLOSED LOOP ------
 
-def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2, dark=None):
+def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2, dark=None, config_params=None):
 
 
     if dark is None:
@@ -163,6 +163,15 @@ def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=
     # stack and apply wfsmask
     stacked = phase[fitslice]#np.concatenate([phase[fitslice], amp[fitslice]], axis=1)
     stacked = remove_plane(stacked, wfsmask)
+
+    # update shmims
+    # threshold phase based on amplitude? (reject phase values where amplitude is < some threshold)
+    threshold_factor = config_params.get_param('control', 'ampthreshold', float)
+    amp_mask = get_amplitude_mask(amp, threshold_factor)
+    amp_norm = amp / np.mean(amp[amp_mask])
+    phase0 = remove_plane(phase, amp_mask) * amp_mask
+    update_estimate_shmims(phase0, amp, config_params)
+
     return stacked[wfsmask]
 
 def close_loop(config_params):
@@ -243,7 +252,8 @@ def close_loop(config_params):
         'wreg' : wreg,
         'navg' : navg,
         'dmdelay' : dmdelay,
-        'dark' : dark
+        'dark' : dark,
+        'config_params' : config_params
     }
 
     wfsfunc = measure_and_estimate_phase_vector
