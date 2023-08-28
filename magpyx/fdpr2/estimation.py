@@ -48,7 +48,7 @@ def get_Ibar_model(Imeas, Imodel, weights):
     t3 = xp.sum(weights*Imodel**2, axis=(-2,-1))[:,None,None]
     return 2/K * weights * t1 / (t2 * t3**2) * (Imodel * t1 - Imeas * t3)
 
-def get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil):
+def get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil, fit_amp=True):
     xp = get_array_module(Imeas)
     
     # common gradient terms
@@ -81,10 +81,13 @@ def get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil):
         coeffsphi = xp.sum(gradphi*zmodes, axis=(-2,-1)) / zmodes[0].sum()
         gradA = xp.sum(coeffsA[:,None,None]*zmodes,axis=0)
         gradphi = xp.sum(coeffsphi[:,None,None]*zmodes,axis=0)'''
-    
-    return gradA, gradphi
 
-def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap, modes):
+    if fit_amp:
+        return gradA, gradphi
+    else:
+        return gradphi
+    
+def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap, modes, fit_amp):
     
     xp = get_array_module(Eprobes)
     
@@ -94,8 +97,15 @@ def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap, mod
     
     # params to wavefront
     #param_a = params[0]
-    params_amp = params[:N]
-    params_phase = params[N:]
+    #params_amp = params[:N]
+    #params_phase = params[N:]
+
+    if fit_amp:
+        params_amp = params[:N]
+        params_phase = params[N:]
+    else:
+        params_amp = np.ones(N)
+        params_phase = params[:N]
         
     #Eab = xp.zeros(mask.shape, dtype=complex)
     A = xp.zeros(mask.shape)
@@ -104,13 +114,18 @@ def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap, mod
         A[mask] = params_amp
         phi[mask] = params_phase
     else:
-        A = xp.sum(modes * params_amp[:,None,None], axis=0)
+       #A = xp.sum(modes * params_amp[:,None,None], axis=0)
+        if fit_amp:
+            A = xp.sum(modes * params_amp[:,None,None], axis=0)
+        else:
+            A = pupil.astype(float)
         phi = xp.sum(modes * params_phase[:,None,None], axis=0)
     
     # probe
     #Eprobes = np.exp(1j*param_a*phiprobes)
     
     Eab = A * np.exp(1j*phi)
+    #Eab = gauss_convolve(Eab, 3, force_real=False)
     #Eab[mask] = params_re + 1j*params_im
     
     #print(A.max(), phi.max())
@@ -138,16 +153,24 @@ def get_sqerr_grad(params, pupil, mask, Eprobes, weights, Imeas, N, lambdap, mod
     mindict['iter'] += 1'''
     
     # gradient
-    # grada,
-    gradA, gradphi = get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil)#[mask]
-    # split into real, imaginary components
-    if modes is None:
-        grad_Aphi = xp.concatenate([#cp.asarray([grada,]),
+    if fit_amp:
+        gradA, gradphi = get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil, fit_amp=True)#[mask]
+
+        if modes is None:
+            grad_Aphi = xp.concatenate([#cp.asarray([grada,]),
                                     gradA[mask],gradphi[mask]], axis=0) + 2 * lambdap * params
+        else:
+            gradAmodal = xp.sum(gradA*modes,axis=(-2,-1))
+            gradphimodal = xp.sum(gradphi*modes, axis=(-2,-1))
+            grad_Aphi = xp.concatenate([gradAmodal, gradphimodal], axis=0) + 2 * lambdap * params
     else:
-        gradAmodal = xp.sum(gradA*modes,axis=(-2,-1))
-        gradphimodal = xp.sum(gradphi*modes, axis=(-2,-1))
-        grad_Aphi = xp.concatenate([gradAmodal, gradphimodal], axis=0) + 2 * lambdap * params
+        gradphi = get_grad(Imeas, Imodel, Efocals, Eprobes, Eab, A, phi, weights, pupil, fit_amp=False)
+
+        if modes is None:
+            grad_Aphi = gradphi[mask] + 2 * lambdap * params
+        else:
+            gradphimodal = xp.sum(gradphi*modes, axis=(-2,-1))
+            grad_Aphi = gradphimodal + 2 * lambdap * params
     
     # back to CPU
     if xp is cp:
@@ -176,7 +199,7 @@ def get_han2d_sq(N, fraction=1./np.sqrt(2), normalize=False):
     window[np.abs(x) > rmax] = 0
     return np.outer(window, window)
 
-def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True, modes=None):
+def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True, modes=None, fit_amp=True):
 
     # centroiding here? probably not.
     if modes is None:
@@ -196,7 +219,7 @@ def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=Non
             ph0 = np.zeros(len(modes))
             init_params = np.concatenate([amp0, ph0], axis=0)
     # compute weights?
-    weights = 1/(Imeas + wreg) * get_han2d_sq(Imeas[0].shape[0], fraction=0.7)
+    weights =  1/(Imeas + wreg) #* get_han2d_sq(Imeas[0].shape[0], fraction=0.5) #0.7
     weights /= np.max(weights,axis=(-2,-1))[:,None,None]
 
     if bounds:
@@ -216,9 +239,13 @@ def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=Non
     else:
         modes_cp = None
 
+    if not fit_amp:
+        init_params = init_params[N:]
+        bounds = bounds[N:]
+
     errfunc = get_sqerr_grad
     fitdict = minimize(errfunc, init_params, args=(fitmask_cp, fitmask_cp,
-                        Eprobes, weights, Imeas, N, reg, modes_cp),
+                        Eprobes, weights, Imeas, N, reg, modes_cp, fit_amp),
                         method='L-BFGS-B', jac=True, bounds=bounds,
                         tol=tol, options={'ftol' : tol, 'gtol' : tol, 'maxls' : 100})
 
@@ -226,26 +253,35 @@ def run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=Non
     phase_est = np.zeros(fitmask.shape)
     amp_est = np.zeros(fitmask.shape)
 
-    if modes is None:
-        phase_est[fitmask] = fitdict['x'][N:]
-        amp_est[fitmask] = fitdict['x'][:N]
+    if fit_amp:
+        if modes is None:
+            phase_est[fitmask] = fitdict['x'][N:]
+            amp_est[fitmask] = fitdict['x'][:N]
+        else:
+            phase_est = np.sum(fitdict['x'][N:,None,None] * modes, axis=0)
+            amp_est = np.sum(fitdict['x'][:N,None,None] * modes, axis=0)
     else:
-        phase_est = np.sum(fitdict['x'][N:,None,None] * modes, axis=0)
-        amp_est = np.sum(fitdict['x'][:N,None,None] * modes, axis=0)
+        if modes is None:
+            phase_est[fitmask] = fitdict['x'][:N]
+            amp_est = None
+        else:
+            phase_est = np.sum(fitdict['x'][:N,None,None] * modes, axis=0)
+            amp_est = None
 
     return {
         'phase_est' : phase_est,
         'amp_est' : amp_est,
         'obj_val' : fitdict['fun'],
-        'fit_params' : fitdict['x']
+        'fit_params' : fitdict['x'],
+        'fitdict' : fitdict
     }
 
 # ------- multiprocessing -------
 
-def _process_phase_retrieval_mpfriendly(fitmask, tol, reg, wreg, Eprobes, init_params, bounds, Imeas):
-    return run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=init_params, bounds=bounds)
+def _process_phase_retrieval_mpfriendly(fitmask, tol, reg, wreg, Eprobes, init_params, bounds, modes, Imeas):
+    return run_phase_retrieval(Imeas, fitmask, tol, reg, wreg, Eprobes, init_params=init_params, bounds=bounds, modes=modes)
 
-def multiprocess_phase_retrieval(allpsfs, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True, processes=2, gpus=None):
+def multiprocess_phase_retrieval(allpsfs, fitmask, tol, reg, wreg, Eprobes, init_params=None, modes=None, bounds=True, processes=2, gpus=None):
     
 
     from functools import partial
@@ -257,7 +293,7 @@ def multiprocess_phase_retrieval(allpsfs, fitmask, tol, reg, wreg, Eprobes, init
         logger.warning(e)
 
     # TO DO: figure out if this still needs to be sequential or can be the original multiprocess_phase_retrieval
-    mpfunc = partial(_process_phase_retrieval_mpfriendly, fitmask, tol, reg, wreg, Eprobes, init_params, bounds)
+    mpfunc = partial(_process_phase_retrieval_mpfriendly, fitmask, tol, reg, wreg, Eprobes, init_params, bounds, modes)
 
     # There's a weird possibly memory-related issue that prevents us from simply
     # splitting the full allpsfs hypercube across the processes for multiprocessing
