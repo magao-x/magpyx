@@ -30,7 +30,9 @@ def get_response_measurements(camstream, dmstream, dmdivstream, divcmds, modecmd
     cur1 = dmdivstream.grab_latest()
 
     meas = []
-    for cmd in modecmds:
+    for i, cmd in enumerate(modecmds):
+        if (i % 100) == 0:
+            print(f'{i+1}/{len(cmd)}')
 
         # write modal cmd
         dmstream.write(cmd)
