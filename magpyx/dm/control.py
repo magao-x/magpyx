@@ -26,7 +26,25 @@ def collect_hadamard_interaction_matrix(dmstream, wfsfunc, paramdict={}):
     '''
     raise NotImplementedError('woops')
 
-def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5, leak=0., delay=None, paramdict={}):
+def filter_cmd(cmd, dm_mask, fmin=1, fmax=17, dm_weight=1):
+    shape = dm_mask.shape
+    ndm = shape[0]
+
+    fx = np.fft.rfftfreq(ndm, d=1.0/ndm)
+    fy = np.fft.fftfreq(ndm, d=1.0/ndm)
+    fxx, fyy = np.meshgrid(fx, fy)
+    fr = np.sqrt(fxx**2 + fyy**2)
+    spectrum = np.ones(fr.shape, dtype=complex)
+    spectrum[fr <= fmin] = 0
+    spectrum[fr >= fmax] = 0
+
+    cmdfft = np.fft.rfft2(cmd)
+    cmd_filtered = np.fft.irfft2(cmdfft*spectrum).real
+
+    return cmd_filtered * dm_weight
+
+
+def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5, leak=0., delay=None, filter_leak=False, filter_params={}, paramdict={}):
     '''
     Generalized function for (slow) leaky integrator closed-loop operations with shmims.
 
@@ -51,7 +69,12 @@ def closed_loop(dmstream, ctrlmat, wfsfunc, dm_map, dm_mask, niter=10, gain=0.5,
         # update command
         update_vec = ctrlmat.dot(resid)
         update_cmd = dmutils.map_vector_to_square(update_vec, dm_map, dm_mask)
-        cmd = (1 - leak) * cmd - gain * update_cmd
+        if filter_leak:
+            cmd_filtered = filter_cmd(cmd, dm_mask, fmin=filter_params.get('fmin', None), fmax=filter_params.get('fmax', None), dm_weight=filter_params.get('dm_weight', 1))
+        else:
+            cmd_filtered = cmd
+        #cmd = (1 - leak) * cmd - gain * update_cmd
+        cmd = cmd - leak * cmd_filtered - gain * update_cmd
 
         #print(f'Max/min: {cmd.max()}, {cmd.min()}')
 
@@ -98,10 +121,11 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
     wfs_ctrl_map, wfs_ctrl_mask = get_wfs_ctrl_map_mask(ifcube, threshold=wfsthresh)
     dm_ctrl_map, dm_ctrl_mask = get_dm_ctrl_map_mask(ifcube, dm_map, dm_mask, threshold=dmthresh)
 
+    # reduce ifcube to only include pixels in wfs_ctrl_mask
+    ifcube_active = ifcube[:,wfs_ctrl_mask]
+    ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean
+
     if svd_if:
-        # reduce ifcube to only include pixels in wfs_ctrl_mask
-        ifcube_active = ifcube[:,wfs_ctrl_mask]
-        ifcube_active -= np.mean(ifcube_active,axis=0) # remove the mean
         # get SVD
         wfsmodes, singvals, dmmodes = get_svd_from_ifcube(ifcube_active)
     else:
@@ -110,7 +134,7 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
         hmeas_active = hmeas[:,wfs_ctrl_mask] / hval / 2.0
         #hmeas_active -= np.mean(hmeas_active, axis=0)
         wfsmodes, singvals, dmmodes = get_svd_from_ifcube(hmeas_active)
-        ifcube_active = None
+        #ifcube_active = hmeas_active
 
     #print(ifcube_active.shape, wfsmodes.shape, singvals.shape, dmmodes.shape)
     #return wfs_ctrl_map, wfs_ctrl_mask, dm_ctrl_map, dm_ctrl_mask, ifcube, wfsmodes, singvals, dmmodes
@@ -136,7 +160,8 @@ def get_control_matrix_from_hadamard_measurements(hmeas, hmodes, hval, dm_map, d
         'wfsmodes' : wfsmodes,
         'dmmodes' : dmmodes_interp,
         'singvals' : singvals,
-        'ctrlmat' : ctrl
+        'ctrlmat' : ctrl,
+        'G' : ifcube_active,
     }
 
 def get_control_matrix(dmmodes, wfsmodes, singvals, nmodes=None, regtype='truncate', treg=1e-16):
