@@ -32,7 +32,7 @@ def get_response_measurements(camstream, dmstream, dmdivstream, divcmds, modecmd
     meas = []
     for i, cmd in enumerate(modecmds):
         if (i % 100) == 0:
-            print(f'{i+1}/{len(cmd)}')
+            print(f'{i+1}/{len(modecmds)}')
 
         # write modal cmd
         dmstream.write(cmd)

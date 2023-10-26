@@ -60,12 +60,14 @@ def get_defocus_probes(fitmask, probevals, wavelen, scalefactor=1):
         zmodes = cp.asnumpy(zernike.arbitrary_basis(fitmask, nterms=4, outside=0))
     else:
         zmodes = zernike.arbitrary_basis(fitmask, nterms=4, outside=0)
+
+    #zmodes = zernike.arbitrary_basis(fitmask, nterms=4, outside=0)
     phasevals = cmd_rms_to_phase_rms(probevals, wavelen) * scalefactor
     return np.exp(1j*zmodes[-1]*phasevals[:,None,None])
 
 def get_defocus_probe_cmds(dm_mask, probevals, config_params):
     if cp is not None:
-        fitmask = cp.array(dm_mask)
+        dm_mask = cp.array(dm_mask)
         zmodes = cp.asnumpy(zernike.arbitrary_basis(dm_mask, nterms=4, outside=0))
     else:
         zmodes = zernike.arbitrary_basis(dm_mask, nterms=4, outside=0)
