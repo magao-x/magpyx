@@ -297,14 +297,17 @@ def get_wfs_ctrl_map_mask(ifcube, threshold=0.5):
 def interpolate_dm_modes(dm_mode_matrix, active_mask, dm_map, dm_mask, n=1):
     
     # get the interpolation mapping
-    couple_matrix = get_coupling_matrix(active_mask, dm_map, dm_mask.astype(bool), n=n)
+    couple_matrix, inactive_mask = get_coupling_matrix(active_mask, dm_map, dm_mask.astype(bool), n=n)
+    interp_mask = dmutils.map_square_to_vector(inactive_mask, dm_map, dm_mask)
     n = couple_matrix.shape[0]
     
     # a matrix multiply does the interpolation
     #print(dm_mode_matrix.shape, couple_matrix.shape)
-    interpolated_modes = np.dot(dm_mode_matrix, np.eye(n) + couple_matrix)
-    
-    return interpolated_modes
+    interpolated_modes = np.dot(dm_mode_matrix, couple_matrix) #np.eye(n) # 952x952
+    modes_out = dm_mode_matrix.copy()
+    modes_out[:,interp_mask] = interpolated_modes[:,interp_mask]
+
+    return modes_out #interpolated_modes
 
 def get_coupling_matrix(active_mask, dm_map, dm_mask, n=1):
     '''
@@ -342,4 +345,4 @@ def get_coupling_matrix(active_mask, dm_map, dm_mask, n=1):
         act_idx = np.where(dmutils.map_square_to_vector(tmp, dm_map, dm_mask))[0][0]
         couple_matrix[act_idx] = dmutils.map_square_to_vector(neighbor_map, dm_map, dm_mask)
     
-    return couple_matrix.T # not sure why I need this transpose, but, uhh
+    return couple_matrix.T, inactive_mask # not sure why I need this transpose, but, uhh
