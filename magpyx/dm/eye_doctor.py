@@ -932,9 +932,9 @@ def write_new_flat(dm, description=None, filename=None, update_symlink=False, ov
         outpath = '/opt/MagAOX/calib/dm/alpao_bax150/'
         dm_name = 'ALPAOBAX150'
         shm_name = 'dm00disp'
-    elif dm.upper() == 'NCPC':
-        outpath = '/opt/MagAOX/calib/dm/alpao_bax260/'
-        dm_name = 'ALPAOBAX260'
+    elif dm.upper() == 'NCPC': #ALPAOBAX260 no longer in MagAO-X, 12/04/2023 JKK
+        outpath = '/opt/MagAOX/calib/dm/bmc_1k/'
+        dm_name = 'BMC1K'
         shm_name = 'dm02disp'
     elif dm.upper() == 'TWEETER':
         outpath = '/opt/MagAOX/calib/dm/bmc_2k/'
