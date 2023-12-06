@@ -11,7 +11,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('fdpr')
 
-
 from ..utils import ImageStream
 
 from .tools import (close_loop, compute_control_matrix, measure_response_matrix, estimate_oneshot,
@@ -89,7 +88,7 @@ def console_measure_response_matrix():
     imcube = measure_response_matrix(config_params)
 
     outpath = path.join(calib_path, 'measrespM', f'measrespM_{descr}_{date}.fits')
-    fits.writeto(outpath, imcube)
+    fits.writeto(outpath, imcube.astype(np.float32))
     logger.info(f'Wrote interaction measurements to {outpath}')
 
     # replace symlink
