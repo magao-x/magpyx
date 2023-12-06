@@ -22,6 +22,11 @@ from .measurement import get_probed_measurements, get_ref_measurement, get_respo
 
 from importlib import import_module
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('fdpr2')
+
+
 try:
     import cupy as cp
 except ImportError:
@@ -31,10 +36,6 @@ except ImportError:
 
 SUBDIRS = ['ctrlmat', 'dmmap', 'dmmask', 'dmmodes', 'estrespM', 'ifmat',
            'measrespM', 'singvals', 'wfsmap', 'wfsmask', 'wfsmodes']
-
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('fdpr2')
 
 # ------ GENERAL -------
 
@@ -295,7 +296,7 @@ def compute_control_matrix(config_params, nmodes=None, write=True):
     with fits.open(config_params.get_param('interaction', 'dm_map', str)) as f:
         dm_map = f[0].data
     with fits.open(config_params.get_param('interaction', 'dm_mask', str)) as f:
-        dm_mask = f[0].data
+        dm_mask = f[0].data.astype(bool)
     dmthresh = config_params.get_param('control', 'dmthreshold', float)
     wfsthresh = config_params.get_param('control', 'wfsthreshold', float)
     ninterp = config_params.get_param('control', 'ninterp', int)
