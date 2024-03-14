@@ -209,7 +209,7 @@ def get_actuator_connections(filename=default_mapfile):
     return map_vector_to_square_2K(numeric_mapping), conn_types
 
 def display_interconnect_connections(connector, actuator_mapfile=default_mapfile, ax=None, flagged_acts=None):
-
+    # note that flagged_acts are expected in a 0-indexed 1D actuator ordering convention!
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(4,3))
 
@@ -230,7 +230,7 @@ def display_interconnect_connections(connector, actuator_mapfile=default_mapfile
     ax.set_title(connector)
 
     if flagged_acts is not None:
-        flagged_idx = np.intersect1d(flagged_acts, actuators, return_indices=True)[-1]
+        flagged_idx = np.intersect1d(np.asarray(flagged_acts)+1, actuators, return_indices=True)[-1]
         ax.scatter(col[flagged_idx], row[flagged_idx], marker='x')
 
     rowvals = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K']
