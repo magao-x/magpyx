@@ -139,7 +139,7 @@ def test_defocus(dmstream, cmds):
 
 # ----- CLOSED LOOP ------
 
-def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2, dark=None, config_params=None):
+def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=None, fitmask=None, fitslice=None, wfsmask=None, Eprobes=None, tol=1e-7, reg=0, wreg=1e2, navg=1, dmdelay=2, dark=None, config_params=None, offset=0):
 
 
     if dark is None:
@@ -158,7 +158,7 @@ def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=
     # run estimator
     estdict = run_phase_retrieval(psfs_cen, fitmask, tol, reg, wreg, Eprobes, init_params=None, bounds=True)
 
-    phase = estdict['phase_est']
+    phase = estdict['phase_est'] - offset
     amp = estdict['amp_est']
     # and remove tip/tilt
     #phase_pttrem = remove_plane(phase, pupilmask)
@@ -175,6 +175,18 @@ def measure_and_estimate_phase_vector(camstream=None, dmstream=None, probe_cmds=
     phase0 = remove_plane(phase, amp_mask) * amp_mask
     update_estimate_shmims(phase0, amp, config_params)
 
+    # --- estimate Strehl ratio ---
+    phase_rms = np.std(phase0[amp_mask])#rms(phase, pupil)
+    amp_rms = np.std(amp_norm[amp_mask])#rms(amp_norm, pupil)
+    amp_lnrms = np.std(np.log(amp_norm)[amp_mask])#rms(np.log(amp_norm), pupil)
+
+    strehl, strehl_phase, strehl_amp = get_strehl(phase0, amp_norm, amp_mask)
+    #strehl = np.exp(-phase_rms**2) * np.exp(-amp_lnrms**2)
+
+    logger.info(f'Estimated phase RMS: {phase_rms:.3} (rad)')
+    logger.info(f'Estimated amplitude RMS: {amp_rms*100:.3} (%)')
+    logger.info(f'Estimated Strehl: {strehl:.2f} ({strehl_phase:.2f} phase-only and {strehl_amp:.2f} amplitude-only)')
+
     return stacked[wfsmask]
 
 def close_loop(config_params):
@@ -185,7 +197,7 @@ def close_loop(config_params):
     camname = config_params.get_param('camera', 'name', str)
     camstream = ImageStream(camname)
     dark_name = config_params.get_param('diversity', 'dark_shmim', str)
-    if dark_name != 'None':
+    if dark_name.lower() != 'none':
         darkstream = ImageStream(dark_name)
         dark = darkstream.grab_latest()
     else:
