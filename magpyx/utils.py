@@ -138,7 +138,7 @@ class ImageStream(shmio.Image):
             self.destroy()
             #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
             buffer = np.zeros(expected_shape)
-            self.create(self.name, buffer, -1, True, 8, 1, shmio.ImageStreamIODataType.FLOAT, 1)
+            self.create(self.name, buffer, -1, True, 8, 1, self.dtype, 1)
 
     @_is_open
     def close(self):
@@ -277,7 +277,7 @@ def create_shmim(name, dims, dtype=shmio.ImageStreamIODataType.FLOAT, shared=1, 
     img = shmio.Image()
     # not sure if I should try to destroy first in case it already exists
     #img.create(name, dims, dtype, shared, nbkw)
-    buffer = np.zeros(dims)
+    buffer = np.zeros(dims, dtype=np.uint16)
     img.create(name, buffer, -1, True, 8, 1, dtype, 1)
     #img.close()
 
