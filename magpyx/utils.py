@@ -138,7 +138,7 @@ class ImageStream(shmio.Image):
             self.destroy()
             #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
             buffer = np.zeros(expected_shape)
-            self.create(self.name, buffer, -1, True, 8, 1, self.dtype, 1)
+            self.create(self.name, buffer)
 
     @_is_open
     def close(self):
