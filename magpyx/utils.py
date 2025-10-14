@@ -137,7 +137,7 @@ class ImageStream(shmio.Image):
             logger.info(f'Got shape {curshape} but expected shape {expected_shape}. Destroying and re-creating.')
             self.destroy()
             #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
-            buffer = np.zeros(expected_shape)
+            buffer = np.zeros(expected_shape, dtype=np.uint16)
             self.create(self.name, buffer)
 
     @_is_open
