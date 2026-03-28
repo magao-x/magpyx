@@ -95,13 +95,14 @@ class ImageStream(shmio.Image):
     '''
     SUCCESS_CODE = 0
 
-    def __init__(self, name, expected_shape=None):
+    def __init__(self, name, expected_shape=None, dtype=np.float32):
         super().__init__()
         self._write = super().write
         self.name = name
         self.is_open = False
         self.open()
 
+        self.dtype = dtype
         if expected_shape is not None:
             self.check_shape(expected_shape)
 
@@ -136,9 +137,12 @@ class ImageStream(shmio.Image):
         if list(curshape) != list(expected_shape):
             logger.info(f'Got shape {curshape} but expected shape {expected_shape}. Destroying and re-creating.')
             self.destroy()
+
             #self.create(self.name, expected_shape, shmio.ImageStreamIODataType.FLOAT, 1, 8)
+            # buffer = np.zeros(expected_shape)
+            #self.create(self.name, buffer, -1, True, 8, 1, self.dtype, 1)
             buffer = np.zeros(expected_shape)
-            self.create(self.name, buffer, -1, True, 8, 1, self.dtype, 1)
+            self.create(self.name, np.zeros(expected_shape, dtype=self.dtype))
 
     @_is_open
     def close(self):
